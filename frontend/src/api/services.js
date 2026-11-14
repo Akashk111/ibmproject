@@ -23,7 +23,7 @@ export const stopService = {
     apiRequest(`/api/stops?query=${encodeURIComponent(query)}&active_only=${activeOnly}`),
 
   searchPlaces: (q) =>
-    apiRequest(`/api/stops/search?q=${encodeURIComponent(q)}`),
+    apiRequest(`/api/places/search?q=${encodeURIComponent(q)}`),
 
   getNearby: (lat, lng, limit = 5) =>
     apiRequest(`/api/stops/nearby?lat=${lat}&lng=${lng}&limit=${limit}`),
@@ -46,6 +46,17 @@ export const stopService = {
     apiRequest(`/api/stops/${id}`, {
       method: 'DELETE',
     }),
+};
+
+export const placeService = {
+  getAll: (category = '') => {
+    const url = category ? `/api/places?category=${encodeURIComponent(category)}` : '/api/places';
+    return apiRequest(url);
+  },
+
+  getById: (id) => apiRequest(`/api/places/${id}`),
+
+  search: (q) => apiRequest(`/api/places/search?q=${encodeURIComponent(q)}`),
 };
 
 export const routeService = {
@@ -129,6 +140,60 @@ export const trackingService = {
     }),
 };
 
+export const scheduleService = {
+  getAll: (routeId = null) => {
+    const url = routeId ? `/api/schedules?route_id=${routeId}` : '/api/schedules';
+    return apiRequest(url);
+  },
+
+  search: (originId, destinationId, date, timeSlot) => {
+    const params = new URLSearchParams();
+    if (originId) params.append('origin_id', originId);
+    if (destinationId) params.append('destination_id', destinationId);
+    if (date) params.append('date', date);
+    if (timeSlot) params.append('time_slot', timeSlot);
+    return apiRequest(`/api/schedules/search?${params.toString()}`);
+  },
+
+  getById: (id) => apiRequest(`/api/schedules/${id}`),
+
+  getSeats: (scheduleId, date) => {
+    const url = date ? `/api/schedules/${scheduleId}/seats?date=${date}` : `/api/schedules/${scheduleId}/seats`;
+    return apiRequest(url);
+  },
+};
+
+export const bookingService = {
+  create: (bookingData) =>
+    apiRequest('/api/bookings', {
+      method: 'POST',
+      body: JSON.stringify(bookingData),
+    }),
+
+  getByIdOrRef: (identifier) => apiRequest(`/api/bookings/${identifier}`),
+
+  getMyBookings: (reference = '') => {
+    const url = reference ? `/api/bookings/my-bookings?reference=${encodeURIComponent(reference)}` : '/api/bookings/my-bookings';
+    return apiRequest(url);
+  },
+
+  cancel: (bookingId) =>
+    apiRequest(`/api/bookings/${bookingId}/cancel`, {
+      method: 'POST',
+    }),
+};
+
+export const vehicleService = {
+  getAll: (routeId = null) => {
+    const url = routeId ? `/api/vehicles?route_id=${routeId}` : '/api/vehicles';
+    return apiRequest(url);
+  },
+
+  getById: (id) => apiRequest(`/api/vehicles/${id}`),
+
+  getSeats: (vehicleId) => apiRequest(`/api/vehicles/${vehicleId}/seats`),
+};
+
 export const userService = {
   getFavorites: () => apiRequest('/api/user/favorites'),
   addFavorite: (sourceStopId, destinationStopId) =>
@@ -150,6 +215,7 @@ export const userService = {
 export const adminService = {
   getDashboard: () => apiRequest('/api/admin/dashboard'),
   getUsers: () => apiRequest('/api/admin/users'),
+  getBookings: () => apiRequest('/api/admin/bookings'),
   toggleServiceVerification: (serviceId, status = null) =>
     apiRequest(`/api/admin/services/${serviceId}/verify`, {
       method: 'PUT',
@@ -158,5 +224,10 @@ export const adminService = {
   deleteService: (serviceId) =>
     apiRequest(`/api/admin/services/${serviceId}`, {
       method: 'DELETE',
+    }),
+  importStops: (csvText) =>
+    apiRequest('/api/admin/import/stops', {
+      method: 'POST',
+      body: csvText,
     }),
 };

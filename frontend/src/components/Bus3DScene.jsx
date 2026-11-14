@@ -10,38 +10,39 @@ export default function Bus3DScene() {
     const container = containerRef.current;
     if (!container) return;
 
-    // Check WebGL availability
+    let renderer;
+    let animId;
+    let handleMouseMove;
+    let handleResize;
+
     try {
+      // Check WebGL availability
       const canvas = document.createElement('canvas');
       const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
       if (!gl) {
         setHasWebGL(false);
         return;
       }
-    } catch (e) {
-      setHasWebGL(false);
-      return;
-    }
 
-    // 1. Scene, Camera, Renderer
-    const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x071426, 0.035);
+      // 1. Scene, Camera, Renderer
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x071426, 0.035);
 
-    const width = container.clientWidth || window.innerWidth;
-    const height = container.clientHeight || 650;
+      const width = container.clientWidth || window.innerWidth;
+      const height = container.clientHeight || 650;
 
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    camera.position.set(5.5, 3.2, 7.8);
-    camera.lookAt(0, 0.8, 0);
+      const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+      camera.position.set(5.5, 3.2, 7.8);
+      camera.lookAt(0, 0.8, 0);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
-    container.appendChild(renderer.domElement);
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.15;
+      container.appendChild(renderer.domElement);
 
     // 2. Lighting
     const ambientLight = new THREE.AmbientLight(0xdbeafe, 0.9);
@@ -298,8 +299,8 @@ export default function Bus3DScene() {
     animate();
 
     // Resize handler
-    const handleResize = () => {
-      if (!container) return;
+    handleResize = () => {
+      if (!container || !renderer) return;
       const w = container.clientWidth;
       const h = container.clientHeight;
       camera.aspect = w / h;
@@ -309,14 +310,18 @@ export default function Bus3DScene() {
     window.addEventListener('resize', handleResize);
 
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('resize', handleResize);
-      cancelAnimationFrame(animId);
-      if (renderer.domElement && container.contains(renderer.domElement)) {
+      if (handleMouseMove) window.removeEventListener('mousemove', handleMouseMove);
+      if (handleResize) window.removeEventListener('resize', handleResize);
+      if (animId) cancelAnimationFrame(animId);
+      if (renderer && renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
-      renderer.dispose();
+      if (renderer) renderer.dispose();
     };
+    } catch (err) {
+      console.warn('3D Scene WebGL initialization failed, switching to photo fallback:', err);
+      setHasWebGL(false);
+    }
   }, []);
 
   if (!hasWebGL) {

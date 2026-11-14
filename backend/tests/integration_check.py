@@ -10,19 +10,19 @@ from app.config import Config
 app = create_app()
 client = app.test_client()
 
-print("--- Starting Full Integration Check ---")
+print("--- Starting Phase 3 Full Integration Check ---")
 
 # 1. Health
 res = client.get('/api/health')
 assert res.status_code == 200, f"Health check failed: {res.data}"
 print("✔ 1. Health check passed:", res.json)
 
-# 2. Stops listing
+# 2. Stops listing (40+ Mangaluru Stops)
 res = client.get('/api/stops')
 assert res.status_code == 200
 stops = res.json['stops']
-assert len(stops) >= 16
-print(f"✔ 2. Bus stops retrieved ({len(stops)} stops in Mangaluru)")
+assert len(stops) >= 40
+print(f"✔ 2. Bus stops retrieved ({len(stops)} stops in Mangaluru transportation database)")
 
 # 3. Direct Journey Search: State Bank -> Kadri
 res = client.post('/api/journey/search', json={
@@ -81,7 +81,7 @@ admin_token = login_res.json['token']
 dash_res = client.get('/api/admin/dashboard', headers={'Authorization': f'Bearer {admin_token}'})
 assert dash_res.status_code == 200
 dash_stats = dash_res.json['stats']
-print(f"✔ 6. Admin dashboard authenticated successfully: {dash_stats['total_stops']} stops, {dash_stats['total_routes']} routes, {dash_stats['total_services']} departures")
+print(f"✔ 6. Admin dashboard authenticated successfully: {dash_stats['total_stops']} stops, {dash_stats['total_routes']} routes, {dash_stats['total_services']} departures, {dash_stats['total_vehicles']} vehicles")
 
 # 7. Commuter login & favorites
 user_login = client.post('/api/auth/login', json={
@@ -124,4 +124,61 @@ sim_res = client.post('/api/tracking/simulate-step')
 assert sim_res.status_code == 200
 print(f"✔ 10. Tracking telematics & demo simulation passed: {len(buses_res.json['buses'])} buses active on fleet")
 
-print("\n🎉 ALL 10 FULL-STACK INTEGRATION SCENARIOS PASSED WITH 100% SUCCESS!")
+# 11. Curated Places & Landmarks (/api/places)
+places_res = client.get('/api/places')
+assert places_res.status_code == 200
+places_list = places_res.json
+assert len(places_list) >= 10
+print(f"✔ 11. Curated Mangaluru landmarks retrieved ({len(places_list)} destinations, e.g. {places_list[0]['name']})")
+
+# 12. Visual 32-Seat Layout & Schedules (/api/schedules)
+sched_res = client.get('/api/schedules')
+assert sched_res.status_code == 200
+schedules_list = sched_res.json
+assert len(schedules_list) >= 5
+first_sched_id = schedules_list[0]['id']
+
+seats_res = client.get(f'/api/schedules/{first_sched_id}/seats')
+assert seats_res.status_code == 200
+seats_data = seats_res.json
+assert seats_data['total_seats'] == 32
+assert len(seats_data['seats']) == 32
+print(f"✔ 12. 32-Seat bus layout verified for schedule {first_sched_id} ({seats_data['available_seats']} available, {seats_data['occupied_seats']} occupied)")
+
+# 13. Concurrency / Double-Booking Prevention (/api/bookings)
+test_date = "2026-11-20"
+book1 = client.post('/api/bookings', json={
+    'schedule_id': first_sched_id,
+    'travel_date': test_date,
+    'seat_numbers': ['3A', '3B'],
+    'passengers': [
+        {'passenger_name': 'Commuter A', 'passenger_gender': 'MALE'},
+        {'passenger_name': 'Commuter B', 'passenger_gender': 'FEMALE'}
+    ]
+})
+assert book1.status_code == 201
+b_ref = book1.json['booking']['booking_reference']
+assert b_ref.startswith('MBC-MGL-')
+
+# Try booking seat 3A again on same schedule & date -> Must return 409
+book2_conflict = client.post('/api/bookings', json={
+    'schedule_id': first_sched_id,
+    'travel_date': test_date,
+    'seat_numbers': ['3A', '4A'],
+    'passengers': [
+        {'passenger_name': 'Commuter C', 'passenger_gender': 'MALE'},
+        {'passenger_name': 'Commuter D', 'passenger_gender': 'MALE'}
+    ]
+})
+assert book2_conflict.status_code == 409
+assert 'already been reserved' in book2_conflict.json['error']
+print(f"✔ 13. Seat reservation & double-booking prevention passed: {b_ref} confirmed, conflicting attempt rejected with 409")
+
+# 14. Admin CSV Export (/api/admin/export/stops)
+csv_res = client.get('/api/admin/export/stops', headers={'Authorization': f'Bearer {admin_token}'})
+assert csv_res.status_code == 200
+assert 'text/csv' in csv_res.headers.get('Content-Type', '')
+assert b'name,code,latitude,longitude' in csv_res.data
+print(f"✔ 14. Admin CSV export passed: exported bus stops dataset ({len(csv_res.data.splitlines())} lines)")
+
+print("\n🎉 ALL 14 FULL-STACK PHASE 3 INTEGRATION SCENARIOS PASSED WITH 100% SUCCESS!")

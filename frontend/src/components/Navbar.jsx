@@ -34,10 +34,12 @@ export default function Navbar() {
   const navLinks = [
     { name: 'Home', path: '/' },
     { name: 'Plan Journey', path: '/plan' },
+    { name: 'Explore Kudla', path: '/explore' },
+    { name: 'Book Seats', path: '/schedules', highlight: true },
+    { name: 'My Bookings', path: '/my-bookings' },
     { name: 'Bus Routes', path: '/routes' },
-    { name: 'Live Tracking', path: '/tracking', highlight: true },
-    { name: 'Explore Map', path: '/map' },
-    { name: 'About', path: '/about' },
+    { name: 'Live Tracking', path: '/tracking' },
+    { name: 'Map', path: '/map' },
   ];
 
   // Dynamic styling based on scroll and homepage

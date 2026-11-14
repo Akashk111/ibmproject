@@ -67,14 +67,16 @@ export default function SearchCard({ initialSource = '', initialDest = '', onSea
       if (initialSource) {
         try {
           const res = await stopService.searchPlaces(initialSource);
-          const match = res.results?.find(r => r.name.toLowerCase() === initialSource.toLowerCase());
+          const list = Array.isArray(res) ? res : (res.results || []);
+          const match = list.find(r => r.name.toLowerCase() === initialSource.toLowerCase());
           if (match) setSelectedSource(match);
         } catch (e) {}
       }
       if (initialDest) {
         try {
           const res = await stopService.searchPlaces(initialDest);
-          const match = res.results?.find(r => r.name.toLowerCase() === initialDest.toLowerCase());
+          const list = Array.isArray(res) ? res : (res.results || []);
+          const match = list.find(r => r.name.toLowerCase() === initialDest.toLowerCase());
           if (match) setSelectedDest(match);
         } catch (e) {}
       }
@@ -108,7 +110,7 @@ export default function SearchCard({ initialSource = '', initialDest = '', onSea
     try {
       // 1. Backend database verified stops & landmarks
       const backendRes = await stopService.searchPlaces(query);
-      let results = backendRes.results || [];
+      let results = Array.isArray(backendRes) ? backendRes : (backendRes.results || []);
 
       // 2. If fewer than 2 results and query is at least 3 chars, query Nominatim bounded to Mangaluru
       if (results.length < 2 && query.trim().length >= 3) {
