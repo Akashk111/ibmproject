@@ -22,6 +22,12 @@ export const stopService = {
   getAll: (query = '', activeOnly = true) =>
     apiRequest(`/api/stops?query=${encodeURIComponent(query)}&active_only=${activeOnly}`),
 
+  searchPlaces: (q) =>
+    apiRequest(`/api/stops/search?q=${encodeURIComponent(q)}`),
+
+  getNearby: (lat, lng, limit = 5) =>
+    apiRequest(`/api/stops/nearby?lat=${lat}&lng=${lng}&limit=${limit}`),
+
   getById: (id) => apiRequest(`/api/stops/${id}`),
 
   create: (data) =>

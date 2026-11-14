@@ -102,4 +102,26 @@ assert fav_list.status_code == 200
 assert len(fav_list.json['favorites']) >= 1
 print(f"✔ 7. Commuter favorites flow passed ({len(fav_list.json['favorites'])} saved favorites)")
 
-print("\n🎉 ALL 7 FULL-STACK INTEGRATION SCENARIOS PASSED WITH 100% SUCCESS!")
+# 8. Automatic Place & Stop Search (/api/stops/search?q=Kan)
+search_res = client.get('/api/stops/search?q=Kan')
+assert search_res.status_code == 200
+names = [r['name'] for r in search_res.json['results']]
+assert any('Kankanady' in n for n in names)
+print(f"✔ 8. Place autocomplete search passed: typing 'Kan' returned {len(names)} verified matches ({', '.join(names[:3])})")
+
+# 9. Geolocation Nearby Stops (/api/stops/nearby)
+nearby_res = client.get('/api/stops/nearby?lat=12.8698&lng=74.8431&limit=3')
+assert nearby_res.status_code == 200
+assert len(nearby_res.json['nearest_stops']) == 3
+closest = nearby_res.json['nearest_stops'][0]
+print(f"✔ 9. Geolocation nearest stop calculation passed: nearest to [12.8698, 74.8431] is {closest['name']} ({closest['formatted_distance']}, {closest['walking_time_label']})")
+
+# 10. Live Tracking & Simulation (/api/tracking/buses)
+buses_res = client.get('/api/tracking/buses')
+assert buses_res.status_code == 200
+assert len(buses_res.json['buses']) >= 4
+sim_res = client.post('/api/tracking/simulate-step')
+assert sim_res.status_code == 200
+print(f"✔ 10. Tracking telematics & demo simulation passed: {len(buses_res.json['buses'])} buses active on fleet")
+
+print("\n🎉 ALL 10 FULL-STACK INTEGRATION SCENARIOS PASSED WITH 100% SUCCESS!")

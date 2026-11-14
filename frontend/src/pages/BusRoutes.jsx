@@ -239,8 +239,8 @@ export default function BusRoutes() {
                 </div>
 
                 {/* Map */}
-                <div className="h-[280px]">
-                  <LeafletMap selectedRoute={selectedRoute} />
+                <div className="w-full">
+                  <LeafletMap selectedRoute={selectedRoute} height="h-[280px]" />
                 </div>
 
                 {/* Stops in sequence */}
