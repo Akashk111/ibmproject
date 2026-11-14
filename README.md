@@ -9,6 +9,14 @@
 
 **Mangaluru Bus Connect** is a full-stack, intelligent city transit journey planner engineered specifically for the public transportation ecosystem in Mangaluru (Kudla), Karnataka, India.
 
+### Phase 2 Upgrades
+- **Premium Homepage Redesign**: Modern transit UI with high-resolution passenger bus photography and dark gradient overlays.
+- **Dedicated Interactive Map (`/map`)**: Full-screen OpenStreetMap exploration with stop markers, route line overlays, and "Locate Me" current GPS position.
+- **Browser Geolocation Integration**: "Use My Current Location" button calculating straight-line distances (Haversine) and walking estimates (~80m/min) to nearest bus stops.
+- **Dedicated Live Bus Tracking Portal (`/tracking`)**: Real-time vehicle telematics panel with vehicle speed, heading, next stop, and ETA.
+- **GPS-Ready Telematics Backend**: Protected ingestion endpoint (`POST /api/tracking/location`) for hardware GPS transponders and tracking devices.
+- **Honest Tracking Statuses**: `LIVE` (verified GPS), `STALE` (>120s old), `OFFLINE`, and `DEMO` (transparent simulation with visible notice).
+
 ### The Problem
 Commuters, students, and visitors in Mangaluru frequently struggle to navigate the extensive network of private city buses (governed by the Dakshina Kannada Bus Operators' Association — DKBOA) and KSRTC city services:
 - Bus timings and direct vs. connecting options are rarely mapped digitally.
@@ -267,7 +275,44 @@ npm run build
 
 ---
 
-## 8. Deployment Guide
+## 8. GPS Device Ingestion & Live Tracking Integration
+
+### GPS Ingestion API
+Real GPS transponders installed on city buses send telemetry to:
+```http
+POST /api/tracking/location
+Headers:
+  Content-Type: application/json
+  X-Device-Key: mangaluru-gps-device-secret-key-2025
+```
+Payload:
+```json
+{
+  "vehicle_id": "KA-19-F-1204",
+  "vehicle_name": "Surathkal Express 1A",
+  "route_id": 1,
+  "latitude": 12.8795,
+  "longitude": 74.8427,
+  "speed": 34.0,
+  "heading": 350.0,
+  "next_stop_id": 10,
+  "eta_minutes": 4,
+  "source_type": "LIVE"
+}
+```
+
+### Demonstration Tracking Mode
+When physical GPS devices are not transmitting, vehicles are placed in `DEMO` mode.
+A simulation endpoint advances vehicle coordinates smoothly along route stops:
+```http
+POST /api/tracking/simulate-step
+```
+Whenever demo vehicles are tracked, a prominent warning is rendered on the UI:
+> **DEMO TRACKING — Simulated vehicle location. This is not a real bus.**
+
+---
+
+## 9. Deployment Guide
 
 ### Backend Deployment (Render)
 1. Push repository to GitHub.

@@ -326,7 +326,7 @@ export default function JourneyResults() {
               </div>
 
               {/* Map */}
-              <LeafletMap journey={selectedJourney} />
+              <LeafletMap journey={selectedJourney} userLocation={searchParams?.userLocation} />
 
               {selectedJourney && (
                 <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 flex items-center justify-between">

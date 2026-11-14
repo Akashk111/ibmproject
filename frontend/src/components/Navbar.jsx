@@ -19,8 +19,9 @@ export default function Navbar() {
     { name: 'Home', path: '/' },
     { name: 'Plan Journey', path: '/plan' },
     { name: 'Bus Routes', path: '/routes' },
+    { name: 'Live Tracking', path: '/tracking' },
+    { name: 'Explore Map', path: '/map' },
     { name: 'About', path: '/about' },
-    { name: 'Contact', path: '/contact' },
   ];
 
   return (

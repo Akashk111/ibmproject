@@ -8,6 +8,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Home from './pages/Home';
 import JourneyResults from './pages/JourneyResults';
 import BusRoutes from './pages/BusRoutes';
+import ExploreMap from './pages/ExploreMap';
+import LiveTracking from './pages/LiveTracking';
 import About from './pages/About';
 import Contact from './pages/Contact';
 import Login from './pages/Login';
@@ -27,6 +29,8 @@ export default function App() {
               <Route path="/plan" element={<JourneyResults />} />
               <Route path="/journey-results" element={<JourneyResults />} />
               <Route path="/routes" element={<BusRoutes />} />
+              <Route path="/tracking" element={<LiveTracking />} />
+              <Route path="/map" element={<ExploreMap />} />
               <Route path="/about" element={<About />} />
               <Route path="/contact" element={<Contact />} />
               <Route path="/login" element={<Login />} />

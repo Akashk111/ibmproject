@@ -98,6 +98,31 @@ export const journeyService = {
   getStats: () => apiRequest('/api/journey/stats'),
 };
 
+export const trackingService = {
+  getBuses: (routeId = '', status = '') => {
+    const params = new URLSearchParams();
+    if (routeId) params.append('route_id', routeId);
+    if (status) params.append('status', status);
+    return apiRequest(`/api/tracking/buses?${params.toString()}`);
+  },
+
+  getBusDetail: (id) => apiRequest(`/api/tracking/buses/${id}`),
+
+  getRouteBuses: (routeId) => apiRequest(`/api/tracking/routes/${routeId}`),
+
+  simulateStep: () =>
+    apiRequest('/api/tracking/simulate-step', {
+      method: 'POST',
+    }),
+
+  recordGpsLocation: (data, deviceKey) =>
+    apiRequest('/api/tracking/location', {
+      method: 'POST',
+      headers: deviceKey ? { 'X-Device-Key': deviceKey } : {},
+      body: JSON.stringify(data),
+    }),
+};
+
 export const userService = {
   getFavorites: () => apiRequest('/api/user/favorites'),
   addFavorite: (sourceStopId, destinationStopId) =>

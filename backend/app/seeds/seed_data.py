@@ -2,6 +2,7 @@ from app.models import db
 from app.models.user import User
 from app.models.stop import BusStop
 from app.models.route import BusRoute, RouteStop, BusService
+from app.models.tracking import BusLocation
 
 def seed_database():
     """Populates the database with realistic Mangaluru bus network demonstration data."""
@@ -266,5 +267,74 @@ def seed_database():
             )
             db.session.add(service)
 
+    # 4. Seed Tracked Demo Vehicles
+    r1a = BusRoute.query.filter_by(route_code="1A").first()
+    r15 = BusRoute.query.filter_by(route_code="15").first()
+    r27 = BusRoute.query.filter_by(route_code="27").first()
+    r42 = BusRoute.query.filter_by(route_code="42").first()
+
+    lalbagh = stop_map.get("Lalbagh")
+    ladyhill = stop_map.get("Ladyhill")
+    bejai = stop_map.get("Bejai")
+    kadri = stop_map.get("Kadri")
+    kankanady = stop_map.get("Kankanady")
+    pumpwell = stop_map.get("Pumpwell")
+
+    tracked_vehicles = [
+        BusLocation(
+            vehicle_id="KA-19-F-1204",
+            vehicle_name="Surathkal Express 1A",
+            route_id=r1a.id if r1a else 1,
+            latitude=lalbagh.latitude if lalbagh else 12.8795,
+            longitude=lalbagh.longitude if lalbagh else 74.8427,
+            speed=32.0,
+            heading=345.0,
+            next_stop_id=ladyhill.id if ladyhill else 10,
+            eta_minutes=4,
+            source_type="DEMO",
+            is_active=True
+        ),
+        BusLocation(
+            vehicle_id="KA-19-F-3891",
+            vehicle_name="Kadri Cityliner 15",
+            route_id=r15.id if r15 else 3,
+            latitude=bejai.latitude if bejai else 12.8856,
+            longitude=bejai.longitude if bejai else 74.8485,
+            speed=28.5,
+            heading=60.0,
+            next_stop_id=kadri.id if kadri else 6,
+            eta_minutes=6,
+            source_type="DEMO",
+            is_active=True
+        ),
+        BusLocation(
+            vehicle_id="KA-19-F-5502",
+            vehicle_name="Junction Connector 27",
+            route_id=r27.id if r27 else 5,
+            latitude=kankanady.latitude if kankanady else 12.8647,
+            longitude=kankanady.longitude if kankanady else 74.8624,
+            speed=30.0,
+            heading=120.0,
+            next_stop_id=pumpwell.id if pumpwell else 8,
+            eta_minutes=5,
+            source_type="DEMO",
+            is_active=True
+        ),
+        BusLocation(
+            vehicle_id="KA-19-F-7119",
+            vehicle_name="Ullal Coastal Shuttle 42",
+            route_id=r42.id if r42 else 7,
+            latitude=pumpwell.latitude if pumpwell else 12.8615,
+            longitude=pumpwell.longitude if pumpwell else 74.8724,
+            speed=35.0,
+            heading=195.0,
+            next_stop_id=stop_map.get("Ullal").id if stop_map.get("Ullal") else 14,
+            eta_minutes=12,
+            source_type="DEMO",
+            is_active=True
+        )
+    ]
+    db.session.add_all(tracked_vehicles)
+
     db.session.commit()
-    print("Database successfully seeded with Mangaluru stops, routes, and services!")
+    print("Database successfully seeded with Mangaluru stops, routes, services, and tracked buses!")
