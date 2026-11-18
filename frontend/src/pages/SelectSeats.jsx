@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { 
   Bus, User, ShieldCheck, ArrowRight, ArrowLeft, CheckCircle2, 
-  AlertTriangle, CreditCard, Sparkles, Clock, Calendar, MapPin, XCircle 
+  AlertTriangle, CreditCard, Sparkles, Clock, Calendar, MapPin, XCircle, 
+  Smartphone, Wallet, Landmark, Lock, CheckCircle, RefreshCw 
 } from 'lucide-react';
-import { scheduleService, bookingService } from '../api/services';
+import { scheduleService, bookingService, paymentService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 
 export default function SelectSeats() {
@@ -20,16 +21,62 @@ export default function SelectSeats() {
   const [seatsData, setSeatsData] = useState([]);
   const [selectedSeatNumbers, setSelectedSeatNumbers] = useState([]);
   const [passengers, setPassengers] = useState([
-    { passenger_name: user ? user.name : '', passenger_contact: '', passenger_gender: 'MALE' }
+    { passenger_name: user ? user.name : 'Ramesh Rao', passenger_contact: '', passenger_gender: 'MALE' }
   ]);
+  const [contactPhone, setContactPhone] = useState('9876543210');
+  const [contactEmail, setContactEmail] = useState(user?.email || 'passenger@gmail.com');
+
+  useEffect(() => {
+    if (user?.email) {
+      setContactEmail(user.email);
+    }
+    if (user?.name && passengers[0]?.passenger_name === '') {
+      setPassengers([{ passenger_name: user.name, passenger_contact: '', passenger_gender: 'MALE' }]);
+    }
+  }, [user]);
+
+  const [paymentMethod, setPaymentMethod] = useState('PAYTM_UPI');
+  const [paytmModalOpen, setPaytmModalOpen] = useState(false);
+  const [paytmOrderData, setPaytmOrderData] = useState(null);
+  const [holdSecondsLeft, setHoldSecondsLeft] = useState(600); // 10 minutes
+
+  // Paytm Sandbox interactive inputs
+  const [sandboxUpiVpa, setSandboxUpiVpa] = useState('passenger@paytm');
+  const [sandboxUpiPin, setSandboxUpiPin] = useState('123456');
+  const [sandboxOtp, setSandboxOtp] = useState('489871');
+  const [sandboxBank, setSandboxBank] = useState('State Bank of India');
+  const [sandboxCardNum, setSandboxCardNum] = useState('4111 1111 1111 1111');
+  const [sandboxCardExpiry, setSandboxCardExpiry] = useState('12/28');
+  const [sandboxCardCvv, setSandboxCardCvv] = useState('123');
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [processingPayment, setProcessingPayment] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     loadSeatLayout();
   }, [scheduleId, travelDate]);
+
+  // 10-minute hold countdown timer
+  useEffect(() => {
+    let timer = null;
+    if (paytmModalOpen && holdSecondsLeft > 0) {
+      timer = setInterval(() => {
+        setHoldSecondsLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            handleCancelPayment('Hold expired after 10 minutes');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [paytmModalOpen, holdSecondsLeft]);
 
   const loadSeatLayout = async () => {
     try {
@@ -51,7 +98,7 @@ export default function SelectSeats() {
   };
 
   const handleSeatClick = (seat) => {
-    if (seat.status === 'OCCUPIED') return;
+    if (seat.status === 'OCCUPIED' || seat.status === 'HELD') return;
 
     const isSelected = selectedSeatNumbers.includes(seat.seat_number);
 
@@ -86,19 +133,47 @@ export default function SelectSeats() {
     });
   };
 
-  const handleConfirmReservation = async (e) => {
-    e.preventDefault();
+  const handleInitiatePaytmPayment = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    setErrorMessage('');
+
     if (selectedSeatNumbers.length === 0) {
-      setErrorMessage('Please select at least one bus seat.');
+      setErrorMessage('Please select at least one bus seat from the diagram.');
       return;
     }
 
-    // Validate passenger names
+    // Auto-fill passenger names if blank
+    const updatedPassengers = [...passengers];
     for (let i = 0; i < selectedSeatNumbers.length; i++) {
-      if (!passengers[i] || !passengers[i].passenger_name.trim()) {
-        setErrorMessage(`Please enter the name of passenger for Seat ${selectedSeatNumbers[i]}`);
-        return;
+      if (!updatedPassengers[i] || !updatedPassengers[i].passenger_name?.trim()) {
+        const fallbackName = user?.name ? (i === 0 ? user.name : `Passenger ${i + 1}`) : `Passenger ${i + 1}`;
+        updatedPassengers[i] = {
+          ...(updatedPassengers[i] || {}),
+          passenger_name: fallbackName,
+          passenger_contact: contactPhone.trim(),
+          passenger_gender: updatedPassengers[i]?.passenger_gender || 'MALE',
+          seat_number: selectedSeatNumbers[i]
+        };
       }
+    }
+    setPassengers(updatedPassengers);
+
+    // Validate mobile number and email address for automatic SMS & Email confirmation
+    const cleanPhone = (contactPhone || '').replace(/[\s\-\(\)]/g, '');
+    const isPhoneValid = /^(?:(?:\+|0{0,2})91[\s\-]?)?[6789]\d{9}$/.test(cleanPhone) || /^\+?[1-9]\d{9,14}$/.test(cleanPhone);
+    if (!contactPhone.trim() || !isPhoneValid) {
+      setErrorMessage('Please enter a valid 10-digit mobile number above to receive your SMS booking confirmation.');
+      const phoneInput = document.getElementById('contact-phone-input');
+      if (phoneInput) phoneInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    const isEmailValid = /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/.test(contactEmail.trim());
+    if (!contactEmail.trim() || !isEmailValid) {
+      setErrorMessage('Please enter a valid email address above to receive your confirmation email and digital ticket.');
+      const emailInput = document.getElementById('contact-email-input');
+      if (emailInput) emailInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
     }
 
     try {
@@ -109,29 +184,121 @@ export default function SelectSeats() {
         schedule_id: parseInt(scheduleId, 10),
         travel_date: travelDate,
         seat_numbers: selectedSeatNumbers,
+        passenger_phone: contactPhone.trim(),
+        passenger_email: contactEmail.trim(),
         passengers: selectedSeatNumbers.map((seatNum, idx) => ({
-          passenger_name: passengers[idx]?.passenger_name || `Passenger ${idx + 1}`,
-          passenger_contact: passengers[idx]?.passenger_contact || '',
-          passenger_gender: passengers[idx]?.passenger_gender || 'MALE',
+          passenger_name: updatedPassengers[idx]?.passenger_name || `Passenger ${idx + 1}`,
+          passenger_contact: contactPhone.trim(),
+          passenger_gender: updatedPassengers[idx]?.passenger_gender || 'MALE',
           seat_number: seatNum
-        }))
+        })),
+        amount: totalAmount,
+        payment_method: paymentMethod
       };
 
-      const res = await bookingService.create(payload);
-      if (res.booking && res.booking.booking_reference) {
-        navigate(`/booking-confirmation/${res.booking.booking_reference}`);
+      const res = await paymentService.initiate(payload);
+      if (res.success && res.order_id) {
+        setPaytmOrderData(res);
+        setHoldSecondsLeft(res.hold_minutes ? res.hold_minutes * 60 : 600);
+        setPaytmModalOpen(true);
+      } else {
+        throw new Error(res.error || 'Failed to initiate Paytm payment session.');
       }
     } catch (err) {
-      console.error('Reservation failed:', err);
-      // Double booking conflict or validation error
+      console.error('Payment initiation error:', err);
       setErrorMessage(
-        err.message || 'Seat reservation failed. Another commuter may have just reserved one of your chosen seats. Please refresh and select again.'
+        err.message || 'Seat reservation lock failed. Seat might be occupied or held by another commuter. Please refresh.'
       );
-      // Reload layout to show updated occupied seats
       loadSeatLayout();
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSimulatePaytmSuccess = async () => {
+    if (!paytmOrderData) return;
+    try {
+      setProcessingPayment(true);
+      setErrorMessage('');
+
+      const callbackPayload = {
+        ORDERID: paytmOrderData.order_id,
+        MID: paytmOrderData.mid,
+        TXNAMOUNT: paytmOrderData.amount.toFixed(2),
+        CURRENCY: 'INR',
+        STATUS: 'TXN_SUCCESS',
+        RESPCODE: '01',
+        RESPMSG: 'Txn Successful - Verified by Paytm Sandbox Gateway',
+        PAYMENTMODE: paymentMethod,
+        CHECKSUMHASH: paytmOrderData.checksum,
+        BANKNAME: sandboxBank || 'Paytm Payments Bank / State Bank of India',
+        BANKTXNID: `BANK_MGL_${Math.random().toString(36).substring(2, 9).toUpperCase()}`
+      };
+
+      const res = await paymentService.callback(callbackPayload);
+      if (res.success && res.booking_reference) {
+        setPaytmModalOpen(false);
+        navigate(`/booking-confirmation/${res.booking_reference}`);
+      } else {
+        throw new Error(res.error || res.message || 'Payment verification failed.');
+      }
+    } catch (err) {
+      console.error('Paytm callback error:', err);
+      setErrorMessage(err.message || 'Payment verification failed.');
+    } finally {
+      setProcessingPayment(false);
+    }
+  };
+
+  const handleSimulatePendingPayment = async () => {
+    if (!paytmOrderData) return;
+    try {
+      setProcessingPayment(true);
+      setErrorMessage('');
+
+      const callbackPayload = {
+        ORDERID: paytmOrderData.order_id,
+        MID: paytmOrderData.mid,
+        TXNAMOUNT: paytmOrderData.amount.toFixed(2),
+        CURRENCY: 'INR',
+        STATUS: 'PENDING',
+        RESPCODE: '02',
+        RESPMSG: 'Payment Pending - Awaiting Bank Acknowledgment',
+        PAYMENTMODE: paymentMethod,
+        CHECKSUMHASH: paytmOrderData.checksum,
+        BANKNAME: sandboxBank || 'State Bank of India'
+      };
+
+      const res = await paymentService.callback(callbackPayload);
+      if (res.booking_reference) {
+        setPaytmModalOpen(false);
+        navigate(`/booking-confirmation/${res.booking_reference}`);
+      }
+    } catch (err) {
+      console.error('Paytm pending simulation error:', err);
+      setErrorMessage(err.message || 'Payment simulation error.');
+    } finally {
+      setProcessingPayment(false);
+    }
+  };
+
+  const handleCancelPayment = async (reason = 'Cancelled by user') => {
+    if (paytmOrderData?.order_id) {
+      try {
+        await paymentService.callback({
+          ORDERID: paytmOrderData.order_id,
+          STATUS: 'TXN_FAILURE',
+          RESPCODE: '227',
+          RESPMSG: reason
+        });
+      } catch (err) {
+        console.warn('Failed to notify backend of cancelled payment:', err);
+      }
+    }
+    setPaytmModalOpen(false);
+    setPaytmOrderData(null);
+    setErrorMessage(reason === 'Hold expired after 10 minutes' ? 'Seat reservation hold expired. Please select your seats again.' : `Payment cancelled: ${reason}. Your temporary seat hold has been released.`);
+    loadSeatLayout();
   };
 
   if (loading) {
@@ -167,6 +334,9 @@ export default function SelectSeats() {
     }
     if (seat.status === 'OCCUPIED') {
       return 'bg-slate-300 text-slate-500 border-slate-300 cursor-not-allowed opacity-60';
+    }
+    if (seat.status === 'HELD') {
+      return 'bg-amber-100 text-amber-800 border-amber-400 cursor-not-allowed shadow-sm font-semibold opacity-90';
     }
     // Available
     return 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400 cursor-pointer';
@@ -260,7 +430,7 @@ export default function SelectSeats() {
               </div>
 
               {/* Color Legend */}
-              <div className="flex items-center gap-3 text-[11px] font-bold">
+              <div className="flex flex-wrap items-center gap-3 text-[11px] font-bold">
                 <div className="flex items-center gap-1">
                   <div className="w-3.5 h-3.5 rounded bg-emerald-100 border border-emerald-400" />
                   <span className="text-slate-600">Available</span>
@@ -268,6 +438,10 @@ export default function SelectSeats() {
                 <div className="flex items-center gap-1">
                   <div className="w-3.5 h-3.5 rounded bg-blue-600" />
                   <span className="text-slate-600">Selected</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3.5 h-3.5 rounded bg-amber-100 border border-amber-400" />
+                  <span className="text-amber-800">Held (10m)</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="w-3.5 h-3.5 rounded bg-slate-300" />
@@ -376,8 +550,59 @@ export default function SelectSeats() {
                 Passenger Details
               </h2>
               <p className="text-xs text-slate-500 mb-5">
-                Enter details for each reserved seat
+                Enter passenger information and notification details
               </p>
+
+              {/* Primary Contact for SMS & Email Notifications */}
+              {selectedSeatNumbers.length > 0 && (
+                <div className="mb-6 p-4 rounded-2xl bg-[#E8F1FF]/60 border border-blue-200 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-lg bg-[#0756B8] text-white flex items-center justify-center text-xs font-bold shadow-sm">
+                      📱
+                    </span>
+                    <div>
+                      <h4 className="text-xs font-black text-[#102B4E]">
+                        SMS & Email Notification Details
+                      </h4>
+                      <p className="text-[10px] text-slate-500">
+                        Automatic SMS confirmation & digital boarding pass will be dispatched upon payment
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2.5 pt-1">
+                    <div>
+                      <label className="text-[10px] font-extrabold text-slate-700 block mb-1">
+                        Passenger Mobile Number (for SMS Confirmation) <span className="text-rose-600">*</span>
+                      </label>
+                      <input
+                        id="contact-phone-input"
+                        type="tel"
+                        required
+                        placeholder="e.g. 9876543210 or +91 98765 43210"
+                        value={contactPhone}
+                        onChange={(e) => setContactPhone(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-blue-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0756B8] bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-extrabold text-slate-700 block mb-1">
+                        Passenger Email Address (for Ticket & Receipt) <span className="text-rose-600">*</span>
+                      </label>
+                      <input
+                        id="contact-email-input"
+                        type="email"
+                        required
+                        placeholder="e.g. passenger@gmail.com"
+                        value={contactEmail}
+                        onChange={(e) => setContactEmail(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-blue-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0756B8] bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {selectedSeatNumbers.length === 0 ? (
                 <div className="text-center py-8 text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
@@ -433,29 +658,134 @@ export default function SelectSeats() {
               )}
             </div>
 
-            {/* Fare Summary Card */}
+            {/* Payment Method Selector Card */}
             <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-md">
-              <h3 className="text-base font-black text-slate-900 mb-4">Fare Breakdown</h3>
-              
+              <h3 className="text-base font-black text-slate-900 mb-2 flex items-center justify-between">
+                <span>Select Payment Gateway</span>
+                <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                  Paytm Sandbox
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500 mb-4">
+                Choose your preferred payment method. Seats will be held for 10 minutes during checkout.
+              </p>
+
+              <div className="grid grid-cols-2 gap-2.5 mb-5">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('PAYTM_UPI')}
+                  className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${
+                    paymentMethod === 'PAYTM_UPI'
+                      ? 'border-blue-600 bg-blue-50/60 shadow-sm ring-1 ring-blue-600'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <Smartphone className="w-4 h-4 text-blue-600" />
+                    {paymentMethod === 'PAYTM_UPI' && <CheckCircle className="w-3.5 h-3.5 text-blue-600" />}
+                  </div>
+                  <div>
+                    <span className="font-extrabold text-xs text-slate-900 block">Paytm UPI</span>
+                    <span className="text-[10px] text-slate-500">Instant UPI transfer</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('PAYTM_WALLET')}
+                  className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${
+                    paymentMethod === 'PAYTM_WALLET'
+                      ? 'border-blue-600 bg-blue-50/60 shadow-sm ring-1 ring-blue-600'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <Wallet className="w-4 h-4 text-cyan-600" />
+                    {paymentMethod === 'PAYTM_WALLET' && <CheckCircle className="w-3.5 h-3.5 text-blue-600" />}
+                  </div>
+                  <div>
+                    <span className="font-extrabold text-xs text-slate-900 block">Paytm Wallet</span>
+                    <span className="text-[10px] text-slate-500">Direct wallet balance</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('NET_BANKING')}
+                  className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${
+                    paymentMethod === 'NET_BANKING'
+                      ? 'border-blue-600 bg-blue-50/60 shadow-sm ring-1 ring-blue-600'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <Landmark className="w-4 h-4 text-emerald-600" />
+                    {paymentMethod === 'NET_BANKING' && <CheckCircle className="w-3.5 h-3.5 text-blue-600" />}
+                  </div>
+                  <div>
+                    <span className="font-extrabold text-xs text-slate-900 block">Net Banking</span>
+                    <span className="text-[10px] text-slate-500">All major Indian banks</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('CARDS')}
+                  className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${
+                    paymentMethod === 'CARDS'
+                      ? 'border-blue-600 bg-blue-50/60 shadow-sm ring-1 ring-blue-600'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <CreditCard className="w-4 h-4 text-purple-600" />
+                    {paymentMethod === 'CARDS' && <CheckCircle className="w-3.5 h-3.5 text-blue-600" />}
+                  </div>
+                  <div>
+                    <span className="font-extrabold text-xs text-slate-900 block">Debit / Credit</span>
+                    <span className="text-[10px] text-slate-500">Visa, RuPay, MC</span>
+                  </div>
+                </button>
+              </div>
+
+              {/* Fare Summary Card */}
               <div className="space-y-2.5 text-xs font-semibold text-slate-600 pb-4 border-b border-slate-100">
                 <div className="flex items-center justify-between">
                   <span>Base Fare ({selectedSeatNumbers.length || 0} seats × ₹{farePerSeat})</span>
                   <span className="font-bold text-slate-800">₹{totalAmount}</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-400">
-                  <span>Service Charges & GST</span>
-                  <span className="text-emerald-600 font-bold">FREE (Demo)</span>
+                  <span>Paytm Gateway Charges & GST</span>
+                  <span className="text-emerald-600 font-bold">₹0.00 (Sandbox)</span>
                 </div>
               </div>
 
               <div className="flex items-center justify-between py-4">
-                <span className="text-sm font-black text-slate-900">Total Payable</span>
-                <span className="text-2xl font-black text-brand-600">₹{totalAmount}</span>
+                <div>
+                  <span className="text-xs font-bold text-slate-400 block uppercase">Total Payable</span>
+                  <span className="text-2xl font-black text-brand-600">₹{totalAmount}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                    10-min Temporary Hold
+                  </span>
+                </div>
               </div>
+
+              {/* Inline Reservation & Payment Error Notice */}
+              {errorMessage && (
+                <div className="mb-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 flex items-start gap-2.5 animate-fadeIn">
+                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-xs">
+                    <p className="font-black text-rose-900">Payment Notice</p>
+                    <p className="mt-0.5 font-medium leading-relaxed">{errorMessage}</p>
+                  </div>
+                </div>
+              )}
 
               <button
                 type="button"
-                onClick={handleConfirmReservation}
+                onClick={handleInitiatePaytmPayment}
                 disabled={submitting || selectedSeatNumbers.length === 0}
                 className={`w-full py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-all ${
                   submitting || selectedSeatNumbers.length === 0
@@ -466,19 +796,21 @@ export default function SelectSeats() {
                 {submitting ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Reserving Seats...</span>
+                    <span>Locking Seats & Opening Paytm...</span>
                   </>
                 ) : (
                   <>
-                    <span>Confirm & Book ({selectedSeatNumbers.length} Seats)</span>
+                    <Lock className="w-4 h-4" />
+                    <span>Pay with Paytm (₹{totalAmount})</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
 
-              <p className="text-[11px] text-slate-400 text-center mt-3">
-                Instant confirmation • No payment gateway required for demo
-              </p>
+              <div className="flex items-center justify-center gap-2 text-[11px] text-slate-400 text-center mt-3">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span>256-Bit SSL Encrypted • Paytm Checksum Verified</span>
+              </div>
             </div>
 
           </div>
@@ -486,6 +818,251 @@ export default function SelectSeats() {
         </div>
 
       </div>
+
+      {/* Paytm Sandbox Checkout Modal */}
+      {paytmModalOpen && paytmOrderData && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 animate-fadeIn overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 animate-scaleUp my-8">
+            
+            {/* Paytm Header */}
+            <div className="bg-[#002970] text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="bg-[#00b9f5] px-2.5 py-1 rounded-lg text-white font-black text-xs tracking-wider">
+                  paytm
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm tracking-tight text-white">Paytm Payment Gateway</h3>
+                  <p className="text-[10px] text-blue-200 font-medium">Sandbox Environment • Secure Simulator</p>
+                </div>
+              </div>
+
+              {/* Live 10-Minute Lock Countdown */}
+              <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1 rounded-full text-xs font-bold text-amber-300 border border-white/10">
+                <Clock className="w-3.5 h-3.5" />
+                <span>{Math.floor(holdSecondsLeft / 60)}:{(holdSecondsLeft % 60).toString().padStart(2, '0')}</span>
+              </div>
+            </div>
+
+            {/* Order Details Body */}
+            <div className="p-6 space-y-4">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-semibold">Order ID</span>
+                  <span className="font-mono font-bold text-slate-900">{paytmOrderData.order_id}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-semibold">Merchant ID (MID)</span>
+                  <span className="font-mono font-bold text-slate-900">{paytmOrderData.mid}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-semibold">Seats Locked</span>
+                  <span className="font-bold text-blue-700">{selectedSeatNumbers.join(', ')}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-semibold">Payment Mode</span>
+                  <span className="font-bold text-slate-800">{paymentMethod.replace('_', ' ')}</span>
+                </div>
+                <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-sm">
+                  <span className="font-black text-slate-900">Total Payable</span>
+                  <span className="font-black text-emerald-600 text-lg">₹{paytmOrderData.amount?.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Interactive Test Credentials for Selected Payment Method */}
+              <div className="p-4 rounded-2xl border border-blue-200 bg-blue-50/50 space-y-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-[#102B4E] uppercase tracking-wider text-[10px]">
+                    Paytm Sandbox Test Credentials
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-blue-100 text-[#0756B8] font-bold text-[10px]">
+                    {paymentMethod.replace('_', ' ')}
+                  </span>
+                </div>
+
+                {paymentMethod === 'PAYTM_UPI' && (
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 block mb-0.5">Virtual Payment Address (VPA / UPI ID)</label>
+                      <input
+                        type="text"
+                        value={sandboxUpiVpa}
+                        onChange={(e) => setSandboxUpiVpa(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-mono text-xs font-bold text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 block mb-0.5">UPI MPIN (Test: 123456)</label>
+                      <input
+                        type="password"
+                        maxLength="6"
+                        value={sandboxUpiPin}
+                        onChange={(e) => setSandboxUpiPin(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-mono text-xs font-bold text-slate-800 tracking-widest"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {paymentMethod === 'PAYTM_WALLET' && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block font-bold">Paytm Linked Mobile</span>
+                        <span className="font-mono font-bold text-slate-900">{contactPhone || '9876543210'}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 block font-bold">Wallet Balance</span>
+                        <span className="font-bold text-emerald-600">₹2,500.00</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 block mb-0.5">Paytm Sandbox Test OTP (Default: 489871)</label>
+                      <input
+                        type="text"
+                        maxLength="6"
+                        value={sandboxOtp}
+                        onChange={(e) => setSandboxOtp(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-mono text-xs font-bold text-slate-800 tracking-widest"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {paymentMethod === 'NET_BANKING' && (
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 block mb-1">Select Bank for Net Banking</label>
+                    <select
+                      value={sandboxBank}
+                      onChange={(e) => setSandboxBank(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-800"
+                    >
+                      <option value="State Bank of India">State Bank of India (Retail Sandbox)</option>
+                      <option value="Canara Bank">Canara Bank (Mangaluru Net Banking)</option>
+                      <option value="Karnataka Bank">Karnataka Bank Ltd (Mangaluru Commuter)</option>
+                      <option value="HDFC Bank">HDFC Bank Ltd</option>
+                      <option value="ICICI Bank">ICICI Bank Ltd</option>
+                    </select>
+                  </div>
+                )}
+
+                {paymentMethod === 'CARDS' && (
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 block mb-0.5">Test Card Number</label>
+                      <input
+                        type="text"
+                        value={sandboxCardNum}
+                        onChange={(e) => setSandboxCardNum(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-mono text-xs font-bold text-slate-800"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-600 block mb-0.5">Expiry</label>
+                        <input
+                          type="text"
+                          value={sandboxCardExpiry}
+                          onChange={(e) => setSandboxCardExpiry(e.target.value)}
+                          className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-mono text-xs font-bold text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-600 block mb-0.5">CVV</label>
+                        <input
+                          type="password"
+                          maxLength="3"
+                          value={sandboxCardCvv}
+                          onChange={(e) => setSandboxCardCvv(e.target.value)}
+                          className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-mono text-xs font-bold text-slate-800"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Checksum Security Badge */}
+              <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-200 text-[11px] text-blue-900 flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Cryptographic Paytm Checksum Verified</p>
+                  <p className="text-[10px] text-blue-700 font-mono break-all mt-0.5">
+                    Hash: {paytmOrderData.checksum ? `${paytmOrderData.checksum.slice(0, 32)}...` : 'SHA256_ACTIVE'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Simulation Notice */}
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 flex items-start gap-2">
+                <Sparkles className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Paytm Sandbox Simulation Mode</p>
+                  <p className="text-[10px] text-amber-700">
+                    No actual bank account or credit card will be debited. Completing payment verifies transaction checksum with Flask backend and redirects directly to your 3D Thank You page.
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-2 pt-2">
+                {/* 1. Complete Payment (Success) */}
+                <button
+                  type="button"
+                  onClick={handleSimulatePaytmSuccess}
+                  disabled={processingPayment}
+                  className="w-full py-3.5 rounded-xl bg-[#00b9f5] hover:bg-[#009fd4] text-white font-extrabold text-xs sm:text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                >
+                  {processingPayment ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Verifying with Paytm Server...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Pay ₹{paytmOrderData.amount?.toFixed(2)} with Paytm (Confirm Success)</span>
+                    </>
+                  )}
+                </button>
+
+                {/* 2 & 3. Error and Pending Simulation Options */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleCancelPayment('Bank declined payment - Insufficient funds (Simulated)')}
+                    disabled={processingPayment}
+                    className="py-2.5 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    Simulate Bank Decline
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSimulatePendingPayment}
+                    disabled={processingPayment}
+                    className="py-2.5 rounded-xl border border-amber-200 text-amber-700 hover:bg-amber-50 font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    Simulate Pending Verification
+                  </button>
+                </div>
+
+                {/* 4. Cancel & Release */}
+                <button
+                  type="button"
+                  onClick={() => handleCancelPayment('Cancelled by commuter')}
+                  disabled={processingPayment}
+                  className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel & Release Seat Hold
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

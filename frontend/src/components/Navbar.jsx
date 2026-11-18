@@ -1,29 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Bus, MapPin, Menu, X, User as UserIcon, LogOut, ShieldCheck, Radio, Compass } from 'lucide-react';
+import { Bus, MapPin, Menu, X, User as UserIcon, LogOut, ShieldCheck, Radio, Route as RouteIcon, Search } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isAuthenticated, isAdmin, logout } = useAuth();
-
-  const isHome = location.pathname === '/';
-
-  // Scroll listener for transparent over hero -> solid transition
-  useEffect(() => {
-    const handleScroll = () => {
-      if (window.scrollY > 40) {
-        setScrolled(true);
-      } else {
-        setScrolled(false);
-      }
-    };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -34,44 +18,46 @@ export default function Navbar() {
   const navLinks = [
     { name: 'Home', path: '/' },
     { name: 'Plan Journey', path: '/plan' },
-    { name: 'Explore Kudla', path: '/explore' },
-    { name: 'Book Seats', path: '/schedules', highlight: true },
-    { name: 'My Bookings', path: '/my-bookings' },
-    { name: 'Bus Routes', path: '/routes' },
+    { name: 'City Bus Routes', path: '/routes' },
+    { name: 'Bus Stops', path: '/#popular-stops', isHash: true },
     { name: 'Live Tracking', path: '/tracking' },
-    { name: 'Map', path: '/map' },
+    { name: 'My Bookings', path: '/my-bookings' },
+    { name: 'Help', path: '/contact' },
   ];
 
-  // Dynamic styling based on scroll and homepage
-  const isTransparent = isHome && !scrolled;
-  const navbarClasses = isTransparent
-    ? 'bg-transparent text-white border-transparent'
-    : 'bg-[#071426]/95 backdrop-blur-md text-white border-slate-800 shadow-xl';
+  const handleNavClick = (link) => {
+    if (link.isHash) {
+      if (location.pathname === '/') {
+        const el = document.getElementById('popular-stops');
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      } else {
+        navigate('/#popular-stops');
+      }
+    }
+    setMobileMenuOpen(false);
+  };
 
   return (
-    <header className={`sticky top-0 z-50 transition-all duration-300 border-b ${navbarClasses}`}>
+    <header className="sticky top-0 z-50 bg-[#102B4E] border-b border-[#0756B8]/30 shadow-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-20">
           
           {/* Logo & Brand Name */}
           <Link to="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-br from-brand-500 to-blue-700 flex items-center justify-center text-white shadow-lg shadow-brand-500/30 group-hover:scale-105 transition-transform">
-              <div className="relative flex items-center justify-center">
-                <Bus className="w-5 h-5 text-white" />
-                <MapPin className="w-3.5 h-3.5 text-amber-300 absolute -bottom-1 -right-1" />
-              </div>
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-[#0756B8] flex items-center justify-center text-white shadow-md group-hover:bg-blue-600 transition-colors flex-shrink-0">
+              <Bus className="w-6 h-6 text-white stroke-[2.2]" />
             </div>
             <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-black text-lg sm:text-xl tracking-tight text-white group-hover:text-brand-300 transition-colors">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-black text-lg sm:text-xl tracking-tight text-white">
                   MANGALURU
                 </span>
-                <span className="font-extrabold text-lg sm:text-xl tracking-tight text-brand-400">
+                <span className="font-black text-lg sm:text-xl tracking-tight text-blue-300">
                   BUS CONNECT
                 </span>
               </div>
-              <p className="text-[10px] text-slate-300 font-semibold tracking-widest uppercase hidden sm:block">
-                City Bus Journey Planner
+              <p className="text-[10px] text-blue-200/80 font-medium tracking-wider uppercase hidden sm:block">
+                City Bus Transit Platform
               </p>
             </div>
           </Link>
@@ -79,23 +65,29 @@ export default function Navbar() {
           {/* Desktop Navigation */}
           <nav className="hidden lg:flex items-center gap-1 xl:gap-2">
             {navLinks.map((link) => {
-              const active = location.pathname === link.path;
+              const active = !link.isHash && location.pathname === link.path;
+              if (link.isHash) {
+                return (
+                  <button
+                    key={link.name}
+                    onClick={() => handleNavClick(link)}
+                    className="px-3.5 py-2 rounded-lg text-xs xl:text-sm font-semibold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
+                  >
+                    {link.name}
+                  </button>
+                );
+              }
               return (
                 <Link
                   key={link.path}
                   to={link.path}
-                  className={`px-3.5 py-2 rounded-xl text-xs xl:text-sm font-bold transition-all flex items-center gap-1.5 ${
+                  className={`px-3.5 py-2 rounded-lg text-xs xl:text-sm font-semibold transition-colors ${
                     active
-                      ? 'bg-brand-600 text-white shadow-md'
-                      : isTransparent
-                      ? 'text-slate-200 hover:text-white hover:bg-white/10'
-                      : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                      ? 'text-white bg-[#0756B8] shadow-sm'
+                      : 'text-slate-200 hover:text-white hover:bg-white/10'
                   }`}
                 >
-                  {link.highlight && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  )}
-                  <span>{link.name}</span>
+                  {link.name}
                 </Link>
               );
             })}
@@ -104,46 +96,51 @@ export default function Navbar() {
           {/* Desktop Right Auth Actions */}
           <div className="hidden lg:flex items-center gap-3">
             {isAuthenticated ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 {isAdmin && (
                   <Link
                     to="/admin"
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition-all shadow-sm"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition-all"
                   >
-                    <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                    <ShieldCheck className="w-3.5 h-3.5 text-amber-300" />
                     <span>Admin</span>
                   </Link>
                 )}
                 <Link
                   to="/profile"
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs xl:text-sm font-semibold text-slate-200 hover:bg-white/10 transition-colors"
+                  className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl text-xs xl:text-sm font-semibold text-white hover:bg-white/10 transition-colors border border-white/15 bg-white/5"
+                  title="Passenger Account"
                 >
-                  <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-extrabold text-xs">
+                  <div className="w-8 h-8 rounded-full bg-[#0756B8] text-white flex items-center justify-center font-bold text-xs shadow-sm">
                     {user?.name?.[0]?.toUpperCase() || 'U'}
                   </div>
-                  <span className="max-w-[110px] truncate">{user?.name}</span>
+                  <div className="text-left">
+                    <span className="text-[10px] text-blue-200 block font-normal leading-tight">Passenger Account</span>
+                    <span className="font-bold text-white max-w-[120px] truncate block leading-tight">{user?.name}</span>
+                  </div>
                 </Link>
                 <button
                   onClick={handleLogout}
-                  className="p-2 text-slate-400 hover:text-rose-400 rounded-xl hover:bg-rose-500/10 transition-colors"
+                  className="p-2 text-slate-300 hover:text-rose-300 rounded-lg hover:bg-rose-500/10 transition-colors"
                   title="Log out"
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <Link
                   to="/login"
-                  className="px-4 py-2 text-xs xl:text-sm font-bold text-slate-200 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                  className="flex items-center gap-1.5 px-3.5 py-2 text-xs xl:text-sm font-semibold text-white hover:bg-white/10 rounded-lg transition-colors border border-white/20"
                 >
-                  Login
+                  <UserIcon className="w-3.5 h-3.5 text-blue-300" />
+                  <span>Passenger Account</span>
                 </Link>
                 <Link
                   to="/register"
-                  className="px-4 py-2 text-xs xl:text-sm font-extrabold text-white bg-brand-600 hover:bg-brand-500 rounded-xl shadow-lg shadow-brand-600/30 hover:shadow-xl transition-all"
+                  className="px-4 py-2 text-xs xl:text-sm font-bold text-white bg-[#0756B8] hover:bg-blue-600 rounded-lg shadow-sm transition-all"
                 >
-                  Sign Up
+                  Register
                 </Link>
               </div>
             )}
@@ -153,10 +150,10 @@ export default function Navbar() {
           <div className="lg:hidden flex items-center">
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-xl text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
+              className="p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
               aria-label="Toggle navigation menu"
             >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              {mobileMenuOpen ? <X className="w-6 h-6 text-white" /> : <Menu className="w-6 h-6" />}
             </button>
           </div>
 
@@ -165,53 +162,56 @@ export default function Navbar() {
 
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
-        <div className="lg:hidden border-t border-slate-800 bg-[#071426] px-4 pt-3 pb-6 space-y-2 shadow-2xl animate-fadeIn">
+        <div className="lg:hidden border-t border-white/10 bg-[#102B4E] px-4 pt-3 pb-6 space-y-1.5 shadow-2xl animate-fadeIn">
           {navLinks.map((link) => (
-            <Link
-              key={link.path}
-              to={link.path}
-              onClick={() => setMobileMenuOpen(false)}
-              className={`block px-3.5 py-2.5 rounded-xl text-sm font-bold ${
-                location.pathname === link.path
-                  ? 'bg-brand-600 text-white'
-                  : 'text-slate-300 hover:bg-slate-800'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span>{link.name}</span>
-                {link.highlight && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-extrabold uppercase">
-                    Live
-                  </span>
-                )}
-              </div>
-            </Link>
+            link.isHash ? (
+              <button
+                key={link.name}
+                onClick={() => handleNavClick(link)}
+                className="w-full text-left block px-3.5 py-2.5 rounded-lg text-sm font-semibold text-slate-200 hover:bg-white/10"
+              >
+                {link.name}
+              </button>
+            ) : (
+              <Link
+                key={link.path}
+                to={link.path}
+                onClick={() => setMobileMenuOpen(false)}
+                className={`block px-3.5 py-2.5 rounded-lg text-sm font-semibold ${
+                  location.pathname === link.path
+                    ? 'bg-[#0756B8] text-white'
+                    : 'text-slate-200 hover:bg-white/10'
+                }`}
+              >
+                {link.name}
+              </Link>
+            )
           ))}
 
-          <div className="pt-4 border-t border-slate-800 space-y-2">
+          <div className="pt-4 border-t border-white/10 space-y-2">
             {isAuthenticated ? (
               <>
                 <Link
                   to="/profile"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-200 hover:bg-slate-800"
+                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-white hover:bg-white/10"
                 >
-                  <UserIcon className="w-4 h-4 text-brand-400" />
-                  <span>My Profile ({user?.name})</span>
+                  <UserIcon className="w-4 h-4 text-blue-300" />
+                  <span>Passenger Account ({user?.name})</span>
                 </Link>
                 {isAdmin && (
                   <Link
                     to="/admin"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-amber-300 font-bold hover:bg-slate-800"
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-amber-300 font-bold hover:bg-white/10"
                   >
-                    <ShieldCheck className="w-4 h-4 text-amber-400" />
+                    <ShieldCheck className="w-4 h-4 text-amber-300" />
                     <span>Admin Portal</span>
                   </Link>
                 )}
                 <button
                   onClick={handleLogout}
-                  className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-rose-400 hover:bg-rose-500/10"
+                  className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-rose-300 hover:bg-rose-500/10"
                 >
                   <LogOut className="w-4 h-4" />
                   <span>Log Out</span>
@@ -222,16 +222,17 @@ export default function Navbar() {
                 <Link
                   to="/login"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="text-center py-2.5 rounded-xl border border-slate-700 font-bold text-slate-200 hover:bg-slate-800 text-xs"
+                  className="text-center py-2.5 rounded-lg border border-white/20 font-semibold text-white hover:bg-white/10 text-xs flex items-center justify-center gap-1.5"
                 >
-                  Login
+                  <UserIcon className="w-3.5 h-3.5 text-blue-300" />
+                  <span>Passenger Account</span>
                 </Link>
                 <Link
                   to="/register"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="text-center py-2.5 rounded-xl bg-brand-600 text-white font-extrabold hover:bg-brand-500 shadow-md text-xs"
+                  className="text-center py-2.5 rounded-lg bg-[#0756B8] text-white font-bold hover:bg-blue-600 text-xs flex items-center justify-center"
                 >
-                  Sign Up
+                  Register
                 </Link>
               </div>
             )}

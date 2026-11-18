@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, SlidersHorizontal, MapPin, Clock, AlertTriangle, RefreshCw, Bus, Compass, ChevronRight } from 'lucide-react';
+import { 
+  ArrowLeft, SlidersHorizontal, MapPin, Clock, AlertTriangle, RefreshCw, 
+  Bus, Compass, ChevronRight, ArrowUpDown, IndianRupee, Zap, Gauge 
+} from 'lucide-react';
 import SearchCard from '../components/SearchCard';
 import JourneyCard from '../components/JourneyCard';
 import LeafletMap from '../components/LeafletMap';
@@ -18,6 +21,7 @@ export default function JourneyResults() {
   const [selectedJourney, setSelectedJourney] = useState(null);
   const [showModifySearch, setShowModifySearch] = useState(false);
   const [filterType, setFilterType] = useState('ALL'); // 'ALL', 'DIRECT', 'TRANSFER'
+  const [sortBy, setSortBy] = useState('RECOMMENDED'); // 'RECOMMENDED', 'EARLIEST_DEP', 'EARLIEST_ARR', 'SHORTEST_DUR', 'FEWEST_TRANSFERS', 'LOWEST_FARE'
 
   const executeSearch = async (params) => {
     if (!params || !params.sourceId || !params.destId) {
@@ -81,11 +85,51 @@ export default function JourneyResults() {
     executeSearch(updated);
   };
 
-  const filteredJourneys = (searchResult?.journeys || []).filter(j => {
-    if (filterType === 'DIRECT') return j.journey_type === 'DIRECT';
-    if (filterType === 'TRANSFER') return j.journey_type !== 'DIRECT';
-    return true;
-  });
+  const parseTimeToMinutes = (t) => {
+    if (!t) return 0;
+    const match = String(t).match(/(\d+):(\d+)\s*(AM|PM)?/i);
+    if (!match) return 0;
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const period = match[3] ? match[3].toUpperCase() : null;
+    if (period === 'PM' && hours < 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  };
+
+  const processedJourneys = useMemo(() => {
+    let list = (searchResult?.journeys || []).filter(j => {
+      if (filterType === 'DIRECT') return j.journey_type === 'DIRECT';
+      if (filterType === 'TRANSFER') return j.journey_type !== 'DIRECT';
+      return true;
+    });
+
+    const sorted = [...list].sort((a, b) => {
+      if (sortBy === 'EARLIEST_DEP') {
+        return parseTimeToMinutes(a.departure_time) - parseTimeToMinutes(b.departure_time);
+      }
+      if (sortBy === 'EARLIEST_ARR') {
+        const arrA = a.expected_arrival_time || a.arrival_time;
+        const arrB = b.expected_arrival_time || b.arrival_time;
+        return parseTimeToMinutes(arrA) - parseTimeToMinutes(arrB);
+      }
+      if (sortBy === 'SHORTEST_DUR') {
+        return (a.total_duration_minutes || 0) - (b.total_duration_minutes || 0);
+      }
+      if (sortBy === 'FEWEST_TRANSFERS') {
+        const transA = a.journey_type === 'DIRECT' ? 0 : (a.transfers_count || 1);
+        const transB = b.journey_type === 'DIRECT' ? 0 : (b.transfers_count || 1);
+        if (transA !== transB) return transA - transB;
+        return (a.total_duration_minutes || 0) - (b.total_duration_minutes || 0);
+      }
+      if (sortBy === 'LOWEST_FARE') {
+        return (a.total_fare || 0) - (b.total_fare || 0);
+      }
+      return (a.rank || 0) - (b.rank || 0);
+    });
+
+    return sorted;
+  }, [searchResult, filterType, sortBy]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-8">
@@ -169,17 +213,17 @@ export default function JourneyResults() {
       )}
 
       {/* No Route Found Fallback (Stage 4) */}
-      {!loading && !error && searchResult && !searchResult.success && (
+      {!loading && !error && searchResult && (!searchResult.success || (searchResult.journeys && searchResult.journeys.length === 0)) && (
         <div className="space-y-8 animate-fadeIn">
           <div className="bg-white p-8 rounded-2xl border border-amber-200 shadow-sm text-center max-w-3xl mx-auto space-y-4">
             <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
               <Compass className="w-7 h-7" />
             </div>
             <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900">
-              {searchResult.message}
+              {searchResult.message || "No buses are currently available for this journey and date."}
             </h2>
             <p className="text-sm text-slate-600 leading-relaxed max-w-xl mx-auto">
-              No direct or 1-transfer bus schedule was found departing at {searchResult.departure_time_requested} on {searchResult.day_requested} between {searchResult.source_stop?.name} and {searchResult.destination_stop?.name}.
+              No direct or 1-transfer bus schedule was found departing at {searchResult.departure_time_requested || 'the requested time'} on {searchResult.day_requested || 'this day'} between {searchResult.source_stop?.name || searchParams?.sourceName} and {searchResult.destination_stop?.name || searchParams?.destName}.
             </p>
             {searchResult.suggestions?.advice && (
               <p className="text-xs font-semibold text-brand-700 bg-brand-50 py-2 px-4 rounded-full inline-block">
@@ -252,7 +296,7 @@ export default function JourneyResults() {
       )}
 
       {/* Successful Results View */}
-      {!loading && !error && searchResult && searchResult.success && (
+      {!loading && !error && searchResult && searchResult.journeys && searchResult.journeys.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* Left Column: Journey Cards list & Filters */}
@@ -289,13 +333,92 @@ export default function JourneyResults() {
               </button>
             </div>
 
+            {/* Phase 4 Sort Controls */}
+            <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-brand-600" />
+                  Sort By Travel Preferences:
+                </span>
+                <span className="text-[11px] font-semibold text-brand-600">
+                  {processedJourneys.length} results
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setSortBy('EARLIEST_DEP')}
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
+                    sortBy === 'EARLIEST_DEP' 
+                      ? 'bg-blue-600 text-white shadow-sm' 
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <Clock className="w-3 h-3" />
+                  <span>Earliest Dep</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSortBy('EARLIEST_ARR')}
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
+                    sortBy === 'EARLIEST_ARR' 
+                      ? 'bg-blue-600 text-white shadow-sm' 
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <Zap className="w-3 h-3" />
+                  <span>Earliest Arr</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSortBy('SHORTEST_DUR')}
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
+                    sortBy === 'SHORTEST_DUR' 
+                      ? 'bg-blue-600 text-white shadow-sm' 
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <Gauge className="w-3 h-3" />
+                  <span>Shortest Trip</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSortBy('FEWEST_TRANSFERS')}
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
+                    sortBy === 'FEWEST_TRANSFERS' 
+                      ? 'bg-blue-600 text-white shadow-sm' 
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <Bus className="w-3 h-3" />
+                  <span>Fewest Hops</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSortBy('LOWEST_FARE')}
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
+                    sortBy === 'LOWEST_FARE' 
+                      ? 'bg-blue-600 text-white shadow-sm' 
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <IndianRupee className="w-3 h-3" />
+                  <span>Lowest Fare</span>
+                </button>
+              </div>
+            </div>
+
             {/* Notice */}
             <DemoDataNotice />
 
             {/* Journey Cards */}
             <div className="space-y-4">
-              {filteredJourneys.length > 0 ? (
-                filteredJourneys.map((journey, idx) => (
+              {processedJourneys.length > 0 ? (
+                processedJourneys.map((journey, idx) => (
                   <JourneyCard
                     key={idx}
                     journey={journey}

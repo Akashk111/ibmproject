@@ -110,9 +110,27 @@ def get_schedule_seat_availability(schedule_id):
             ).all()
         )
 
+        # Query active temporary seat holds
+        from app.models.booking import SeatReservation
+        now_utc = datetime.utcnow()
+        held_seat_numbers = set(
+            r.seat_number for r in SeatReservation.query.filter(
+                SeatReservation.schedule_id == schedule_id,
+                SeatReservation.travel_date == travel_date,
+                SeatReservation.status == 'HELD',
+                SeatReservation.expires_at > now_utc
+            ).all()
+        )
+
         seats_data = []
         for s in sorted_seats:
-            status = 'OCCUPIED' if s.seat_number in booked_seat_numbers else 'AVAILABLE'
+            if s.seat_number in booked_seat_numbers:
+                status = 'OCCUPIED'
+            elif s.seat_number in held_seat_numbers:
+                status = 'HELD'
+            else:
+                status = 'AVAILABLE'
+
             seats_data.append({
                 'id': s.id,
                 'seat_number': s.seat_number,
@@ -131,7 +149,71 @@ def get_schedule_seat_availability(schedule_id):
             'total_seats': len(seats_data),
             'available_seats': sum(1 for s in seats_data if s['status'] == 'AVAILABLE'),
             'occupied_seats': sum(1 for s in seats_data if s['status'] == 'OCCUPIED'),
+            'held_seats': sum(1 for s in seats_data if s['status'] == 'HELD'),
             'seats': seats_data
         }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@schedules_bp.route('/popular', methods=['GET'])
+def get_popular_schedules():
+    """
+    Returns verified popular bus services for the homepage showcase.
+    Includes AC Sleeper, Semi-Sleeper, AC Seater, Non-AC Seater, and Non-AC Sleeper.
+    """
+    from app.algorithms.road_routing import get_accurate_road_distance
+
+    try:
+        schedules = Schedule.query.filter_by(booking_enabled=True).limit(8).all()
+        results = []
+
+        bus_image_map = {
+            'AC Sleeper': 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=800&q=80',
+            'Semi-Sleeper': 'https://images.unsplash.com/photo-1570125909232-eb263c188f7e?auto=format&fit=crop&w=800&q=80',
+            'A/C Coastal Express': 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=800&q=80',
+            'Non-AC Sleeper': 'https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=800&q=80',
+            'Non-AC Seater': 'https://images.unsplash.com/photo-1570125909232-eb263c188f7e?auto=format&fit=crop&w=800&q=80',
+            'Standard City Bus': 'https://images.unsplash.com/photo-1570125909232-eb263c188f7e?auto=format&fit=crop&w=800&q=80'
+        }
+
+        for s in schedules:
+            dep_stop = s.departure_stop
+            dest_stop = s.destination_stop
+            dist_km = 18.5
+            if dep_stop and dest_stop:
+                try:
+                    road_res = get_accurate_road_distance(
+                        dep_stop.latitude, dep_stop.longitude,
+                        dest_stop.latitude, dest_stop.longitude,
+                        dep_stop.id, dest_stop.id
+                    )
+                    dist_km = road_res.get('distance_km', 18.5)
+                except Exception:
+                    pass
+
+            v_type = s.vehicle.vehicle_type if s.vehicle else 'AC Seater'
+            img = bus_image_map.get(v_type, 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=800&q=80')
+
+            results.append({
+                'id': s.id,
+                'vehicle_number': s.vehicle.vehicle_number if s.vehicle else 'KA-19-F-1204',
+                'vehicle_name': s.vehicle.vehicle_name if s.vehicle else 'Coastal Express',
+                'operator': s.vehicle.operator if s.vehicle else 'DKBOA Mangaluru',
+                'vehicle_type': v_type,
+                'origin': dep_stop.name if dep_stop else 'State Bank',
+                'destination': dest_stop.name if dest_stop else 'Surathkal',
+                'departure_time': s.departure_time,
+                'arrival_time': s.arrival_time,
+                'duration': f"{s.estimated_duration_minutes // 60}h {s.estimated_duration_minutes % 60}m" if s.estimated_duration_minutes >= 60 else f"{s.estimated_duration_minutes} mins",
+                'distance_km': dist_km,
+                'fare': s.fare,
+                'available_seats': max(4, (s.vehicle.total_seats if s.vehicle else 32) - len(s.bookings)),
+                'total_seats': s.vehicle.total_seats if s.vehicle else 32,
+                'booking_enabled': s.booking_enabled,
+                'verification_status': s.verification_status,
+                'image': img
+            })
+
+        return jsonify(results), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500

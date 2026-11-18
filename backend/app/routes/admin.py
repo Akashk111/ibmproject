@@ -7,6 +7,7 @@ from app.models.stop import BusStop
 from app.models.route import BusRoute, RouteStop, BusService
 from app.models.place import Place
 from app.models.booking import Vehicle, Schedule, Booking
+from app.models.payment import Payment
 from app.models.user_data import SearchHistory, SavedJourney
 from app.utils.auth_helpers import admin_required
 
@@ -26,12 +27,22 @@ def get_dashboard_summary(current_user):
     total_bookings = Booking.query.count()
     total_places = Place.query.count()
 
+    # Payment statistics
+    successful_payments = Payment.query.filter_by(payment_status='SUCCESS').count()
+    failed_payments = Payment.query.filter_by(payment_status='FAILED').count()
+    pending_payments = Payment.query.filter_by(payment_status='PENDING').count()
+    refunds_count = Payment.query.filter_by(payment_status='REFUNDED').count()
+
+    revenue_query = db.session.query(db.func.sum(Payment.amount)).filter(Payment.payment_status == 'SUCCESS').scalar()
+    total_revenue = float(revenue_query or 0.0)
+
     demo_routes = BusRoute.query.filter_by(verification_status='DEMO DATA').count()
     verified_routes = BusRoute.query.filter_by(verification_status='VERIFIED').count()
 
     # Recent activity
     recent_searches = SearchHistory.query.order_by(SearchHistory.searched_at.desc()).limit(8).all()
     recent_bookings = Booking.query.order_by(Booking.created_at.desc()).limit(8).all()
+    recent_payments = Payment.query.order_by(Payment.created_at.desc()).limit(8).all()
 
     return jsonify({
         'stats': {
@@ -45,11 +56,77 @@ def get_dashboard_summary(current_user):
             'total_vehicles': total_vehicles,
             'total_bookings': total_bookings,
             'total_places': total_places,
+            'successful_payments': successful_payments,
+            'failed_payments': failed_payments,
+            'pending_payments': pending_payments,
+            'refunds_count': refunds_count,
+            'total_revenue': total_revenue,
             'demo_routes_count': demo_routes,
             'verified_routes_count': verified_routes
         },
         'recent_searches': [s.to_dict() for s in recent_searches],
-        'recent_bookings': [b.to_dict() for b in recent_bookings]
+        'recent_bookings': [b.to_dict() for b in recent_bookings],
+        'recent_payments': [p.to_dict() for p in recent_payments]
+    }), 200
+
+@admin_bp.route('/payments', methods=['GET'])
+@admin_required
+def get_admin_payments(current_user):
+    """
+    Dedicated payment management endpoint returning transactions,
+    status breakdowns, and bus-wise revenue totals.
+    """
+    payments = Payment.query.order_by(Payment.created_at.desc()).all()
+    
+    # Calculate bus-wise revenue breakdown
+    bus_breakdown = {}
+    for p in payments:
+        if p.payment_status == 'SUCCESS' and p.booking and p.booking.schedule:
+            veh = p.booking.schedule.vehicle
+            v_num = veh.vehicle_number if veh else 'Unassigned'
+            r_code = p.booking.schedule.route.route_code if (p.booking.schedule.route) else 'General'
+            key = f"{v_num} ({r_code})"
+            if key not in bus_breakdown:
+                bus_breakdown[key] = {'vehicle_number': v_num, 'route_code': r_code, 'bookings': 0, 'revenue': 0.0}
+            bus_breakdown[key]['bookings'] += 1
+            bus_breakdown[key]['revenue'] += p.amount
+
+    successful = [p for p in payments if p.payment_status == 'SUCCESS']
+    failed = [p for p in payments if p.payment_status == 'FAILED']
+    pending = [p for p in payments if p.payment_status == 'PENDING']
+    refunded = [p for p in payments if p.payment_status == 'REFUNDED']
+
+    return jsonify({
+        'success': True,
+        'summary': {
+            'total_transactions': len(payments),
+            'successful_count': len(successful),
+            'failed_count': len(failed),
+            'pending_count': len(pending),
+            'refunded_count': len(refunded),
+            'total_revenue': sum(p.amount for p in successful),
+            'refunded_amount': sum(p.amount for p in refunded)
+        },
+        'revenue_summary': {
+            'total_revenue': sum(p.amount for p in successful),
+            'total_transactions': len(payments),
+            'successful_transactions': len(successful),
+            'failed_transactions': len(failed),
+            'pending_transactions': len(pending),
+            'refunded_transactions': len(refunded),
+            'total_refunded': sum(p.amount for p in refunded)
+        },
+        'payments': [p.to_dict() for p in payments],
+        'bus_wise_breakdown': list(bus_breakdown.values()),
+        'bus_wise_revenue': [
+            {
+                'vehicle_number': b['vehicle_number'],
+                'operator': 'DKBOA Mangaluru',
+                'bookings_count': b['bookings'],
+                'total_revenue': b['revenue']
+            }
+            for b in bus_breakdown.values()
+        ]
     }), 200
 
 @admin_bp.route('/users', methods=['GET'])

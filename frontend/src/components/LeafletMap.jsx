@@ -34,6 +34,27 @@ const userLocationIcon = L.divIcon({
   iconAnchor: [12, 12],
 });
 
+// Nearby Bus Stop Pin Generator
+const createNearbyStopIcon = (stop, isSelected = false) => {
+  const bg = isSelected ? '#0756B8' : '#059669';
+  const label = stop.code || stop.name?.slice(0, 4)?.toUpperCase() || 'BUS';
+  return L.divIcon({
+    className: 'custom-nearby-bus-stop-pin',
+    html: `
+      <div style="position: relative; display: flex; flex-direction: column; align-items: center; cursor: pointer;">
+        <div style="background-color: ${bg}; color: white; padding: 3px 7px; border-radius: 8px; font-weight: 800; font-size: 10px; font-family: Inter, sans-serif; border: 2px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 4px; white-space: nowrap;">
+          <span style="font-size: 11px;">🚏</span>
+          <span>${label}</span>
+        </div>
+        <div style="width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid ${bg};"></div>
+      </div>
+    `,
+    iconSize: [60, 26],
+    iconAnchor: [30, 26],
+    popupAnchor: [0, -26],
+  });
+};
+
 // Tracked Bus Icon with Direction Heading
 const createBusVehicleIcon = (bus) => {
   const isDemo = bus.source_type === 'DEMO';
@@ -106,11 +127,14 @@ function LocateMeButton({ userLocation }) {
 export default function LeafletMap({ 
   journey = null, 
   allStops = [], 
+  nearbyStops = [],
+  selectedStop = null,
   selectedRoute = null, 
   userLocation = null,
   trackedBuses = [],
   selectedBus = null,
   onStopSelect = null,
+  onPlanFromStop = null,
   height = "h-[420px] sm:h-[520px] lg:h-[600px]"
 }) {
   const mangaluruCenter = [12.8700, 74.8500]; // Mangaluru Central City coordinate
@@ -125,25 +149,56 @@ export default function LeafletMap({
   if (journey && journey.segments) {
     // Segment 1
     const seg1 = journey.segments[0];
-    if (seg1 && seg1.stops) {
-      segment1Points = seg1.stops.map(s => [s.latitude, s.longitude]);
+    if (seg1) {
+      if (Array.isArray(seg1.geometry) && seg1.geometry.length > 0) {
+        segment1Points = seg1.geometry;
+      } else if (Array.isArray(seg1.route_geometry) && seg1.route_geometry.length > 0) {
+        segment1Points = seg1.route_geometry;
+      } else if (seg1.route_geometry && Array.isArray(seg1.route_geometry.coordinates) && seg1.route_geometry.coordinates.length > 0) {
+        // GeoJSON coordinates are [longitude, latitude] -> convert to Leaflet [lat, lon]
+        segment1Points = seg1.route_geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+      } else if (seg1.stops) {
+        segment1Points = seg1.stops.map(s => [s.latitude, s.longitude]);
+      }
+
       startStop = seg1.from_stop;
       if (journey.segments.length === 1) {
         destStop = seg1.to_stop;
-        waypoints = seg1.stops.slice(1, -1);
+        waypoints = seg1.stops ? seg1.stops.slice(1, -1) : [];
       } else {
         transferStop = seg1.to_stop;
-        waypoints = seg1.stops.slice(1, -1);
+        waypoints = seg1.stops ? seg1.stops.slice(1, -1) : [];
       }
     }
 
     // Segment 2 (Transfer)
     if (journey.segments.length > 1) {
       const seg2 = journey.segments[1];
-      if (seg2 && seg2.stops) {
-        segment2Points = seg2.stops.map(s => [s.latitude, s.longitude]);
+      if (seg2) {
+        if (Array.isArray(seg2.geometry) && seg2.geometry.length > 0) {
+          segment2Points = seg2.geometry;
+        } else if (Array.isArray(seg2.route_geometry) && seg2.route_geometry.length > 0) {
+          segment2Points = seg2.route_geometry;
+        } else if (seg2.route_geometry && Array.isArray(seg2.route_geometry.coordinates) && seg2.route_geometry.coordinates.length > 0) {
+          segment2Points = seg2.route_geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+        } else if (seg2.stops) {
+          segment2Points = seg2.stops.map(s => [s.latitude, s.longitude]);
+        }
         destStop = seg2.to_stop;
-        waypoints = [...waypoints, ...seg2.stops.slice(1, -1)];
+        if (seg2.stops) {
+          waypoints = [...waypoints, ...seg2.stops.slice(1, -1)];
+        }
+      }
+    }
+
+    // Fallback to top-level journey geometry if individual segments don't have separate geometries
+    if (segment1Points.length === 0) {
+      if (Array.isArray(journey.route_geometry) && journey.route_geometry.length > 0) {
+        segment1Points = journey.route_geometry;
+      } else if (Array.isArray(journey.geometry) && journey.geometry.length > 0) {
+        segment1Points = journey.geometry;
+      } else if (journey.route_geometry && Array.isArray(journey.route_geometry.coordinates)) {
+        segment1Points = journey.route_geometry.coordinates.map(([lon, lat]) => [lat, lon]);
       }
     }
   } else if (selectedRoute && selectedRoute.stops) {
@@ -163,7 +218,8 @@ export default function LeafletMap({
     ...(destStop ? [[destStop.latitude, destStop.longitude]] : []),
     ...(transferStop ? [[transferStop.latitude, transferStop.longitude]] : []),
     ...(userLocation ? [[userLocation.latitude, userLocation.longitude]] : []),
-    ...(selectedBus ? [[selectedBus.latitude, selectedBus.longitude]] : [])
+    ...(selectedBus ? [[selectedBus.latitude, selectedBus.longitude]] : []),
+    ...(nearbyStops && nearbyStops.length > 0 ? nearbyStops.map(s => [s.latitude, s.longitude]) : [])
   ];
 
   return (
@@ -209,6 +265,12 @@ export default function LeafletMap({
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded bg-amber-600 inline-block"></span>
               <span>Tracked City Bus</span>
+            </div>
+          )}
+          {nearbyStops.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 rounded bg-emerald-600 text-white font-bold text-[8px] flex items-center justify-center">🚏</span>
+              <span>Nearby Bus Stop</span>
             </div>
           )}
         </div>
@@ -352,6 +414,58 @@ export default function LeafletMap({
                     </p>
                   )}
                 </div>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+
+        {/* Nearby Verified City Bus Stops */}
+        {nearbyStops && nearbyStops.length > 0 && nearbyStops.map((stop) => (
+          <Marker
+            key={`nearby-${stop.id}`}
+            position={[stop.latitude, stop.longitude]}
+            icon={createNearbyStopIcon(stop, selectedStop?.id === stop.id)}
+            eventHandlers={{
+              click: () => onStopSelect && onStopSelect(stop)
+            }}
+          >
+            <Popup>
+              <div className="text-xs p-1 min-w-[200px] max-w-[240px]">
+                <div className="flex items-center justify-between gap-1 mb-1">
+                  <span className="font-extrabold text-sm text-slate-900">{stop.name}</span>
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                    {stop.code || 'CITY'}
+                  </span>
+                </div>
+                <p className="text-slate-600 text-[11px] mb-2 leading-snug">
+                  {stop.location_description || 'Verified Mangaluru Bus Stop'}
+                </p>
+                
+                <div className="flex items-center justify-between py-1 px-2 bg-slate-50 border border-slate-100 rounded-lg text-slate-700 font-semibold mb-2 text-[11px]">
+                  <span>📍 {stop.formatted_distance || stop.formattedDistance || `${Math.round((stop.distance_km || 0) * 1000)} m`}</span>
+                  <span>•</span>
+                  <span>🚶 {stop.walking_time_label || stop.walkingTime || '~2 min walk'}</span>
+                </div>
+
+                {onPlanFromStop ? (
+                  <button
+                    type="button"
+                    onClick={() => onPlanFromStop(stop)}
+                    className="w-full py-1.5 px-3 bg-[#0756B8] hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 shadow-sm"
+                  >
+                    <span>Plan Journey From Here</span>
+                  </button>
+                ) : (
+                  onStopSelect && (
+                    <button
+                      type="button"
+                      onClick={() => onStopSelect(stop)}
+                      className="w-full py-1.5 px-3 bg-[#0756B8] hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors"
+                    >
+                      Select Bus Stop
+                    </button>
+                  )
+                )}
               </div>
             </Popup>
           </Marker>

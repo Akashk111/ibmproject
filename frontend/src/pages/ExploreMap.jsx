@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Search, Crosshair, Navigation, Footprints, Bus, Compass, Layers, Info } from 'lucide-react';
+import { MapPin, Search, Crosshair, Navigation, Footprints, Bus, Compass, Layers, Info, XCircle, ShieldCheck } from 'lucide-react';
 import LeafletMap from '../components/LeafletMap';
 import DemoDataNotice from '../components/DemoDataNotice';
 import { stopService, routeService, trackingService } from '../api/services';
@@ -13,10 +13,13 @@ export default function ExploreMap() {
   const [selectedRoute, setSelectedRoute] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [nearestStops, setNearestStops] = useState([]);
+  const [isWatching, setIsWatching] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStop, setSelectedStop] = useState(null);
 
+  const watchIdRef = useRef(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -35,28 +38,80 @@ export default function ExploreMap() {
       }
     }
     loadMapData();
+
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
   }, []);
 
-  const handleLocateMe = async () => {
-    setLocating(true);
-    try {
-      const coords = await getCurrentPosition();
-      setUserLocation(coords);
-      if (stops.length > 0) {
-        const nearest = findNearestStops(coords, stops, 4);
-        setNearestStops(nearest);
+  // Update nearby stops whenever user location updates
+  const updateNearbyStops = (coords, currentStops = stops) => {
+    if (currentStops && currentStops.length > 0) {
+      const nearest = findNearestStops(coords, currentStops, 5);
+      setNearestStops(nearest);
+      if (!selectedStop && nearest.length > 0) {
+        setSelectedStop(nearest[0]);
       }
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setLocating(false);
     }
+  };
+
+  // Continuous GPS watch
+  const handleStartWatching = () => {
+    setLocationError(null);
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setLocating(true);
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const coords = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: Math.round(pos.coords.accuracy || 15),
+          heading: pos.coords.heading,
+          speed: pos.coords.speed
+        };
+        setUserLocation(coords);
+        setIsWatching(true);
+        setLocating(false);
+        setLocationError(null);
+        updateNearbyStops(coords, stops);
+      },
+      (err) => {
+        setLocating(false);
+        setIsWatching(false);
+        if (watchIdRef.current !== null) {
+          navigator.geolocation.clearWatch(watchIdRef.current);
+          watchIdRef.current = null;
+        }
+        if (err.code === 1) {
+          setLocationError('Location permission denied. Please allow location access in your browser settings.');
+        } else {
+          setLocationError('GPS signal unavailable or timed out.');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 2000 }
+    );
+    watchIdRef.current = watchId;
+  };
+
+  const handleStopWatching = () => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    setIsWatching(false);
   };
 
   const handlePlanFromStop = (stop) => {
     navigate('/plan', {
       state: {
-        initialSource: stop.name
+        initialSource: stop.name,
+        sourceStopId: stop.id
       }
     });
   };
@@ -84,15 +139,51 @@ export default function ExploreMap() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleLocateMe}
-          disabled={locating}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all self-start sm:self-auto"
-        >
-          <Crosshair className={`w-4 h-4 ${locating ? 'animate-spin' : ''}`} />
-          <span>{locating ? 'Acquiring GPS Location...' : 'Locate My Position'}</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {!isWatching ? (
+            <button
+              type="button"
+              onClick={handleStartWatching}
+              disabled={locating}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#0756B8] hover:bg-blue-600 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all self-start sm:self-auto cursor-pointer"
+            >
+              <Crosshair className={`w-4 h-4 ${locating ? 'animate-spin' : ''}`} />
+              <span>{locating ? 'Acquiring Phone GPS...' : 'Use My Current Location'}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleStopWatching}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all self-start sm:self-auto cursor-pointer"
+            >
+              <XCircle className="w-4 h-4" />
+              <span>Stop Sharing Location</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {locationError && (
+        <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs flex items-center justify-between font-medium">
+          <span>{locationError}</span>
+          <button onClick={() => setLocationError(null)} className="text-amber-800 font-bold hover:underline">Dismiss</button>
+        </div>
+      )}
+
+      {/* Telemetry and Distinction Notice */}
+      <div className="bg-[#F4F7FB] p-3.5 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-slate-700">
+        <div className="flex items-center gap-2">
+          <Info className="w-4 h-4 text-[#0756B8] flex-shrink-0" />
+          <span>
+            <strong className="text-[#102B4E]">Distinction:</strong> Blue Marker is your live Phone GPS. Amber/Green pins are verified bus routes and fleet buses.
+          </span>
+        </div>
+        {userLocation && (
+          <div className="flex items-center gap-2 text-[11px] font-mono text-emerald-700 font-bold">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>{userLocation.latitude.toFixed(5)}° N, {userLocation.longitude.toFixed(5)}° E (±{userLocation.accuracy}m)</span>
+          </div>
+        )}
       </div>
 
       <DemoDataNotice compact />
@@ -104,10 +195,12 @@ export default function ExploreMap() {
         <div className="lg:col-span-8 relative">
           <LeafletMap
             allStops={stops}
+            nearbyStops={nearestStops}
             selectedRoute={selectedRoute}
             userLocation={userLocation}
             trackedBuses={trackedBuses}
             onStopSelect={(st) => setSelectedStop(st)}
+            onPlanFromStop={handlePlanFromStop}
             height="h-[520px] sm:h-[620px] lg:h-[680px]"
           />
         </div>

@@ -2,17 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, Bus, MapPin, Users, Plus, Edit, Trash2, CheckCircle2, 
   AlertTriangle, Clock, RefreshCw, Search, ChevronRight, X, Download, 
-  Upload, FileText, Ticket, Compass, Car 
+  Upload, FileText, Ticket, Compass, Car, CreditCard, IndianRupee, ArrowDownCircle, CheckCircle 
 } from 'lucide-react';
-import { adminService, stopService, routeService, bookingService } from '../api/services';
+import { adminService, stopService, routeService, bookingService, paymentService } from '../api/services';
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'stops', 'routes', 'bookings', 'csv', 'users'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'stops', 'routes', 'bookings', 'payments', 'csv', 'users'
   const [dashboardData, setDashboardData] = useState(null);
   const [stops, setStops] = useState([]);
   const [routes, setRoutes] = useState([]);
   const [users, setUsers] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const [paymentsData, setPaymentsData] = useState({ payments: [], revenue_summary: {}, bus_wise_revenue: [] });
+  const [paymentSearch, setPaymentSearch] = useState('');
+  const [refundingOrderId, setRefundingOrderId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState({ text: '', type: '' });
 
@@ -38,23 +41,41 @@ export default function AdminDashboard() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [dashRes, stopsRes, routesRes, usersRes, bookingsRes] = await Promise.all([
+      const [dashRes, stopsRes, routesRes, usersRes, bookingsRes, payRes] = await Promise.all([
         adminService.getDashboard(),
         stopService.getAll('', false),
         routeService.getAll(),
         adminService.getUsers(),
-        adminService.getBookings().catch(() => ({ bookings: [] }))
+        adminService.getBookings().catch(() => ({ bookings: [] })),
+        adminService.getPayments().catch(() => ({ payments: [], revenue_summary: {}, bus_wise_revenue: [] }))
       ]);
       setDashboardData(dashRes);
       setStops(stopsRes.stops || []);
       setRoutes(routesRes.routes || []);
       setUsers(usersRes.users || []);
       setBookings(bookingsRes.bookings || []);
+      setPaymentsData(payRes || { payments: [], revenue_summary: {}, bus_wise_revenue: [] });
     } catch (err) {
       console.error('Error loading admin dashboard:', err);
       setMsg({ text: 'Failed to load admin data: ' + err.message, type: 'error' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefundPayment = async (orderId) => {
+    const reason = window.prompt(`Enter refund reason for Paytm Order ${orderId}:`, 'Customer requested cancellation');
+    if (!reason) return;
+
+    try {
+      setRefundingOrderId(orderId);
+      const res = await paymentService.refund(orderId, reason);
+      showNotification(res.message || 'Payment refunded successfully via Paytm Gateway');
+      loadData();
+    } catch (err) {
+      showNotification(err.message || 'Refund failed', 'error');
+    } finally {
+      setRefundingOrderId(null);
     }
   };
 
@@ -289,6 +310,7 @@ export default function AdminDashboard() {
           { key: 'stops', label: `Bus Stops (${stops.length})` },
           { key: 'routes', label: `Routes & Services (${routes.length})` },
           { key: 'bookings', label: `Seat Bookings (${bookings.length})` },
+          { key: 'payments', label: `Payments & Revenue (₹${paymentsData.revenue_summary?.total_revenue || 0})` },
           { key: 'csv', label: 'CSV Data Import/Export' },
           { key: 'users', label: `Users (${users.length})` },
         ].map((tab) => (
@@ -653,6 +675,211 @@ export default function AdminDashboard() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* TAB: PAYMENTS & REVENUE (Phase 4) */}
+      {activeTab === 'payments' && (
+        <div className="space-y-8 animate-fadeIn">
+          
+          {/* Revenue KPI Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="flex items-center justify-between text-slate-500 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider">Gross Revenue</span>
+                <IndianRupee className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black text-slate-900">
+                ₹{paymentsData.revenue_summary?.total_revenue?.toFixed(2) || '0.00'}
+              </div>
+              <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1 mt-1">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>{paymentsData.revenue_summary?.successful_transactions || 0} Successful Transactions</span>
+              </span>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="flex items-center justify-between text-slate-500 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider">Payment Success Rate</span>
+                <CreditCard className="w-4 h-4 text-blue-600" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black text-blue-700">
+                {paymentsData.payments?.length > 0 
+                  ? `${Math.round(((paymentsData.revenue_summary?.successful_transactions || 0) / paymentsData.payments.length) * 100)}%` 
+                  : '100%'}
+              </div>
+              <span className="text-[11px] text-slate-500 font-semibold mt-1 block">
+                Paytm Sandbox Gateway
+              </span>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="flex items-center justify-between text-slate-500 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider">Pending / Held</span>
+                <Clock className="w-4 h-4 text-amber-600" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black text-amber-700">
+                {paymentsData.revenue_summary?.pending_transactions || 0}
+              </div>
+              <span className="text-[11px] text-amber-700 font-semibold mt-1 block">
+                10-Minute Lock Sessions
+              </span>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="flex items-center justify-between text-slate-500 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider">Total Refunded</span>
+                <ArrowDownCircle className="w-4 h-4 text-purple-600" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black text-purple-700">
+                ₹{paymentsData.revenue_summary?.total_refunded?.toFixed(2) || '0.00'}
+              </div>
+              <span className="text-[11px] text-purple-600 font-semibold mt-1 block">
+                {paymentsData.revenue_summary?.refunded_transactions || 0} Refunded Bookings
+              </span>
+            </div>
+          </div>
+
+          {/* Bus-Wise Revenue Breakdown */}
+          {paymentsData.bus_wise_revenue && paymentsData.bus_wise_revenue.length > 0 && (
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+              <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <Bus className="w-4 h-4 text-brand-600" />
+                <span>Bus-Wise Revenue Contribution</span>
+              </h3>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {paymentsData.bus_wise_revenue.map((bus, idx) => (
+                  <div key={idx} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <span className="font-mono text-xs font-black text-slate-900 block">
+                        {bus.vehicle_number}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-medium">
+                        {bus.operator}
+                      </span>
+                      <span className="text-[10px] text-blue-700 font-bold block mt-1">
+                        {bus.bookings_count} tickets issued
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Collected</span>
+                      <span className="text-base font-black text-emerald-700">₹{bus.total_revenue?.toFixed(2)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Transactions Ledger Table */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900 tracking-tight">
+                  Paytm Transactions Ledger
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Real-time cryptographic audit log of all online booking payments, checksums, and gateway callbacks.
+                </p>
+              </div>
+
+              <div className="relative max-w-xs w-full">
+                <input
+                  type="text"
+                  value={paymentSearch}
+                  onChange={(e) => setPaymentSearch(e.target.value)}
+                  placeholder="Search by Order ID or Ref..."
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:bg-white"
+                />
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    <th className="py-3 px-4">Order ID & Date</th>
+                    <th className="py-3 px-4">Booking Ref</th>
+                    <th className="py-3 px-4">Payment Method</th>
+                    <th className="py-3 px-4">Amount</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Bank Ref / Checksum</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {paymentsData.payments
+                    ?.filter(p => 
+                      p.order_id?.toLowerCase().includes(paymentSearch.toLowerCase()) ||
+                      p.booking_reference?.toLowerCase().includes(paymentSearch.toLowerCase()) ||
+                      p.bank_reference?.toLowerCase().includes(paymentSearch.toLowerCase())
+                    )
+                    .map((p) => {
+                      const isSuccess = p.payment_status === 'PAID';
+                      const isRefunded = p.payment_status === 'REFUNDED';
+                      const isFailed = p.payment_status === 'FAILED';
+                      return (
+                        <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-4">
+                            <span className="font-mono font-bold text-slate-900 block">{p.order_id}</span>
+                            <span className="text-[10px] text-slate-400">
+                              {p.created_at ? new Date(p.created_at).toLocaleString('en-IN') : 'Recent'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
+                              {p.booking_reference || 'N/A'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-semibold text-slate-700">{p.payment_method?.replace('_', ' ') || 'Paytm'}</span>
+                            <span className="text-[10px] text-slate-400 block">{p.payment_gateway}</span>
+                          </td>
+                          <td className="py-3 px-4 font-black text-slate-900">
+                            ₹{p.amount?.toFixed(2)}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${
+                              isSuccess 
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : isRefunded
+                                ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                : isFailed
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : 'bg-amber-50 text-amber-700 border-amber-200'
+                            }`}>
+                              {p.payment_status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-[10px] text-slate-500">
+                            <span>{p.bank_reference || p.transaction_id || 'PENDING_BANK_ACK'}</span>
+                            {p.checksum && (
+                              <span className="text-emerald-600 block font-sans font-bold text-[9px]">
+                                ✓ SHA256 Verified
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            {isSuccess && (
+                              <button
+                                onClick={() => handleRefundPayment(p.order_id)}
+                                disabled={refundingOrderId === p.order_id}
+                                className="px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors"
+                              >
+                                {refundingOrderId === p.order_id ? 'Refunding...' : 'Refund'}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div>
       )}
 

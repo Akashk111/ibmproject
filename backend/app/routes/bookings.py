@@ -1,8 +1,9 @@
 from datetime import datetime
 from flask import Blueprint, request, jsonify
 from app.models import db
-from app.models.booking import Booking, BookingSeat, Passenger, Schedule, Seat
+from app.models.booking import Booking, BookingSeat, Passenger, Schedule, Seat, BookingNotification
 from app.models.user import User
+from app.services.notification_service import NotificationService
 
 bookings_bp = Blueprint('bookings', __name__, url_prefix='/api/bookings')
 
@@ -64,6 +65,9 @@ def create_booking():
         total_amount = fare_per_seat * len(seat_numbers)
 
         user_id = get_current_user_id() or data.get('user_id')
+        passenger_phone = data.get('passenger_phone') or (passengers_data[0].get('passenger_contact') if passengers_data else None)
+        passenger_email = data.get('passenger_email') or data.get('email')
+        payment_status = data.get('payment_status', 'SUCCESS')
 
         # Create Booking
         booking = Booking(
@@ -74,7 +78,10 @@ def create_booking():
             departure_time=schedule.departure_time,
             total_passengers=len(seat_numbers),
             total_amount=total_amount,
+            passenger_phone=passenger_phone,
+            passenger_email=passenger_email,
             booking_status='CONFIRMED',
+            payment_status=payment_status,
             booking_source='DEMO BOOKING'
         )
         db.session.add(booking)
@@ -104,9 +111,15 @@ def create_booking():
 
         db.session.commit()
 
+        # Send automatic SMS and Email booking confirmation if payment succeeded
+        notif_results = None
+        if payment_status in ('SUCCESS', 'PAID (CONFIRMED)', 'PAID (Paytm)'):
+            notif_results = NotificationService.send_booking_notifications(booking)
+
         return jsonify({
             'message': 'Seat reservation confirmed successfully!',
-            'booking': booking.to_dict()
+            'booking': booking.to_dict(),
+            'notifications': notif_results
         }), 201
 
     except Exception as e:
@@ -142,6 +155,14 @@ def cancel_booking(booking_id):
             return jsonify({'message': 'Booking is already cancelled', 'booking': booking.to_dict()}), 200
 
         booking.booking_status = 'CANCELLED'
+        booking.payment_status = 'REFUNDED' if booking.payment_status == 'SUCCESS' else 'FAILED'
+
+        # Release any seat reservations
+        from app.models.booking import SeatReservation
+        reservations = SeatReservation.query.filter_by(booking_id=booking.id).all()
+        for r in reservations:
+            r.status = 'RELEASED'
+
         db.session.commit()
 
         return jsonify({
@@ -150,6 +171,67 @@ def cancel_booking(booking_id):
         }), 200
     except Exception as e:
         db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@bookings_bp.route('/verify/<reference>', methods=['GET'])
+def verify_digital_ticket(reference):
+    """
+    Public ticket inspection verification endpoint.
+    Used by bus conductors and QR code scanners to authenticate valid boarding passes.
+    """
+    try:
+        clean_ref = reference.strip()
+        # If reference has MBC-PASS prefix, extract raw booking reference
+        if 'MBC-PASS:' in clean_ref:
+            parts = clean_ref.split(':')
+            if len(parts) >= 2:
+                clean_ref = parts[1]
+
+        booking = Booking.query.filter(
+            (Booking.booking_reference == clean_ref) | 
+            (Booking.qr_verification_code.ilike(f"%{clean_ref}%"))
+        ).first()
+
+        if not booking:
+            return jsonify({
+                'is_valid': False,
+                'status': 'INVALID_TICKET',
+                'message': 'No genuine ticket record found matching this QR code.'
+            }), 404
+
+        b_dict = booking.to_dict()
+        is_active = booking.booking_status == 'CONFIRMED'
+
+        return jsonify({
+            'valid': is_active,
+            'is_valid': is_active,
+            'status': booking.booking_status,
+            'booking_reference': booking.booking_reference,
+            'travel_date': booking.travel_date,
+            'departure_time': booking.departure_time,
+            'expected_arrival_time': b_dict.get('expected_arrival_time'),
+            'distance_km': b_dict.get('distance_km'),
+            'journey_details': {
+                'from_stop': b_dict.get('departure_stop_name') or 'Mangaluru Boarding Stop',
+                'to_stop': b_dict.get('destination_stop_name') or 'Mangaluru Destination',
+                'route_code': b_dict.get('route_code') or '1A',
+                'route_name': b_dict.get('route_name') or 'City Transit Line',
+                'vehicle_number': b_dict.get('vehicle_number') or 'KA-19-F-1204',
+                'travel_date': booking.travel_date,
+                'departure_time': booking.departure_time,
+                'expected_arrival_time': b_dict.get('expected_arrival_time'),
+                'distance_km': b_dict.get('distance_km')
+            },
+            'seats': [bs.seat_number for bs in booking.seats],
+            'passengers': [p.to_dict() for p in booking.passengers],
+            'payment': {
+                'status': 'PAID' if (booking.payment_status in ('PAID', 'SUCCESS')) else (booking.payment_status or 'PAID'),
+                'amount': booking.total_amount
+            },
+            'verified_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'),
+            'authority': 'DKBOA Mangaluru City Transit Authority'
+        }), 200
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @bookings_bp.route('/my-bookings', methods=['GET'])
@@ -171,5 +253,71 @@ def get_my_bookings():
 
         bookings = query.all()
         return jsonify([b.to_dict() for b in bookings]), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@bookings_bp.route('/<identifier>/resend-notifications', methods=['POST'])
+def resend_notifications(identifier):
+    """
+    Retry or resend SMS and Email booking confirmations.
+    Allows commuters to re-trigger notifications if delivery failed or if updated contact info was provided.
+    """
+    try:
+        booking = None
+        if identifier.isdigit():
+            booking = db.session.get(Booking, int(identifier))
+        if not booking:
+            booking = Booking.query.filter_by(booking_reference=identifier.strip()).first()
+
+        if not booking:
+            return jsonify({'error': 'Booking not found'}), 404
+
+        data = request.get_json() or {}
+        # Allow updating contact details on retry if provided
+        if data.get('passenger_phone'):
+            booking.passenger_phone = data['passenger_phone']
+        if data.get('passenger_email'):
+            booking.passenger_email = data['passenger_email']
+        db.session.commit()
+
+        results = NotificationService.send_booking_notifications(booking, force_resend=True)
+
+        return jsonify({
+            'success': True,
+            'message': 'Notification dispatch re-triggered.',
+            'booking_reference': booking.booking_reference,
+            'sms_status': booking.sms_status,
+            'email_status': booking.email_status,
+            'results': results
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@bookings_bp.route('/<identifier>/notifications', methods=['GET'])
+def get_booking_notifications(identifier):
+    """Retrieve all notification audit logs for a given booking"""
+    try:
+        booking = None
+        if identifier.isdigit():
+            booking = db.session.get(Booking, int(identifier))
+        if not booking:
+            booking = Booking.query.filter_by(booking_reference=identifier.strip()).first()
+
+        if not booking:
+            return jsonify({'error': 'Booking not found'}), 404
+
+        notifs = BookingNotification.query.filter_by(booking_id=booking.id).order_by(BookingNotification.created_at.desc()).all()
+        return jsonify({
+            'booking_reference': booking.booking_reference,
+            'passenger_phone': booking.passenger_phone,
+            'passenger_email': booking.passenger_email,
+            'sms_status': booking.sms_status,
+            'sms_sent_at': booking.sms_sent_at.isoformat() if booking.sms_sent_at else None,
+            'sms_error': booking.sms_error,
+            'email_status': booking.email_status,
+            'email_sent_at': booking.email_sent_at.isoformat() if booking.email_sent_at else None,
+            'email_error': booking.email_error,
+            'notifications': [n.to_dict() for n in notifs]
+        }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500

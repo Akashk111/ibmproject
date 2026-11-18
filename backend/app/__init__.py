@@ -14,6 +14,7 @@ from app.routes.places import places_bp
 from app.routes.schedules import schedules_bp
 from app.routes.bookings import bookings_bp
 from app.routes.vehicles import vehicles_bp
+from app.routes.payments import payments_bp
 from app.seeds.seed_data import seed_database
 
 def create_app(config_class=Config):
@@ -38,6 +39,7 @@ def create_app(config_class=Config):
     app.register_blueprint(schedules_bp)
     app.register_blueprint(bookings_bp)
     app.register_blueprint(vehicles_bp)
+    app.register_blueprint(payments_bp)
 
     @app.route('/api/health', methods=['GET'])
     def health_check():
@@ -58,6 +60,30 @@ def create_app(config_class=Config):
     # Auto-create tables and seed data if needed
     with app.app_context():
         db.create_all()
+        
+        # Safe schema check for notification columns
+        try:
+            from sqlalchemy import text
+            with db.engine.connect() as conn:
+                cursor = conn.execute(text("PRAGMA table_info(bookings)"))
+                existing_cols = {row[1] for row in cursor.fetchall()}
+                new_cols = [
+                    ("passenger_phone", "VARCHAR(30)"),
+                    ("passenger_email", "VARCHAR(120)"),
+                    ("sms_status", "VARCHAR(30) DEFAULT 'PENDING'"),
+                    ("sms_sent_at", "DATETIME"),
+                    ("sms_error", "VARCHAR(255)"),
+                    ("email_status", "VARCHAR(30) DEFAULT 'PENDING'"),
+                    ("email_sent_at", "DATETIME"),
+                    ("email_error", "VARCHAR(255)")
+                ]
+                for col_name, col_type in new_cols:
+                    if col_name not in existing_cols:
+                        conn.execute(text(f"ALTER TABLE bookings ADD COLUMN {col_name} {col_type}"))
+                conn.commit()
+        except Exception as e:
+            print(f"[SCHEMA UPGRADE] Note: {e}")
+
         seed_database()
 
     return app

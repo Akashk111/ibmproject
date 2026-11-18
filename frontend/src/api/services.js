@@ -22,8 +22,8 @@ export const stopService = {
   getAll: (query = '', activeOnly = true) =>
     apiRequest(`/api/stops?query=${encodeURIComponent(query)}&active_only=${activeOnly}`),
 
-  searchPlaces: (q) =>
-    apiRequest(`/api/places/search?q=${encodeURIComponent(q)}`),
+  searchPlaces: (q, cityOnly = true) =>
+    apiRequest(`/api/places/search?q=${encodeURIComponent(q)}${cityOnly ? '&city_only=true' : ''}`),
 
   getNearby: (lat, lng, limit = 5) =>
     apiRequest(`/api/stops/nearby?lat=${lat}&lng=${lng}&limit=${limit}`),
@@ -57,6 +57,8 @@ export const placeService = {
   getById: (id) => apiRequest(`/api/places/${id}`),
 
   search: (q) => apiRequest(`/api/places/search?q=${encodeURIComponent(q)}`),
+
+  getPopularDestinations: () => apiRequest('/api/places/destinations'),
 };
 
 export const routeService = {
@@ -157,10 +159,22 @@ export const scheduleService = {
 
   getById: (id) => apiRequest(`/api/schedules/${id}`),
 
+  getPopularSchedules: () => apiRequest('/api/schedules/popular'),
+
   getSeats: (scheduleId, date) => {
     const url = date ? `/api/schedules/${scheduleId}/seats?date=${date}` : `/api/schedules/${scheduleId}/seats`;
     return apiRequest(url);
   },
+};
+
+export const vehicleService = {
+  getAll: (routeId = null) => {
+    const url = routeId ? `/api/vehicles?route_id=${routeId}` : '/api/vehicles';
+    return apiRequest(url);
+  },
+  getFeatured: () => apiRequest('/api/vehicles/featured'),
+  getById: (id) => apiRequest(`/api/vehicles/${id}`),
+  getSeats: (vehicleId) => apiRequest(`/api/vehicles/${vehicleId}/seats`),
 };
 
 export const bookingService = {
@@ -172,6 +186,8 @@ export const bookingService = {
 
   getByIdOrRef: (identifier) => apiRequest(`/api/bookings/${identifier}`),
 
+  verifyTicket: (reference) => apiRequest(`/api/bookings/verify/${encodeURIComponent(reference)}`),
+
   getMyBookings: (reference = '') => {
     const url = reference ? `/api/bookings/my-bookings?reference=${encodeURIComponent(reference)}` : '/api/bookings/my-bookings';
     return apiRequest(url);
@@ -181,18 +197,39 @@ export const bookingService = {
     apiRequest(`/api/bookings/${bookingId}/cancel`, {
       method: 'POST',
     }),
+
+  resendNotifications: (identifier, data = {}) =>
+    apiRequest(`/api/bookings/${identifier}/resend-notifications`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getNotifications: (identifier) =>
+    apiRequest(`/api/bookings/${identifier}/notifications`),
 };
 
-export const vehicleService = {
-  getAll: (routeId = null) => {
-    const url = routeId ? `/api/vehicles?route_id=${routeId}` : '/api/vehicles';
-    return apiRequest(url);
-  },
+export const paymentService = {
+  initiate: (data) =>
+    apiRequest('/api/payments/initiate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
-  getById: (id) => apiRequest(`/api/vehicles/${id}`),
+  callback: (data) =>
+    apiRequest('/api/payments/callback', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
-  getSeats: (vehicleId) => apiRequest(`/api/vehicles/${vehicleId}/seats`),
+  getStatus: (orderId) => apiRequest(`/api/payments/status/${orderId}`),
+
+  refund: (bookingId, reason = 'Commuter cancellation') =>
+    apiRequest('/api/payments/refund', {
+      method: 'POST',
+      body: JSON.stringify({ booking_id: bookingId, reason }),
+    }),
 };
+
 
 export const userService = {
   getFavorites: () => apiRequest('/api/user/favorites'),
@@ -216,6 +253,7 @@ export const adminService = {
   getDashboard: () => apiRequest('/api/admin/dashboard'),
   getUsers: () => apiRequest('/api/admin/users'),
   getBookings: () => apiRequest('/api/admin/bookings'),
+  getPayments: () => apiRequest('/api/admin/payments'),
   toggleServiceVerification: (serviceId, status = null) =>
     apiRequest(`/api/admin/services/${serviceId}/verify`, {
       method: 'PUT',

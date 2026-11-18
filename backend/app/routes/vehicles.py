@@ -37,3 +37,11 @@ def get_vehicle_seats(vehicle_id):
         return jsonify([s.to_dict() for s in sorted_seats]), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@vehicles_bp.route('/featured', methods=['GET'])
+def get_featured_fleet():
+    try:
+        vehicles = Vehicle.query.filter_by(booking_enabled=True).limit(6).all()
+        return jsonify([v.to_dict() for v in vehicles]), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

@@ -14,6 +14,7 @@ import ExploreMangaluru from './pages/ExploreMangaluru';
 import BusSchedules from './pages/BusSchedules';
 import SelectSeats from './pages/SelectSeats';
 import BookingConfirmation from './pages/BookingConfirmation';
+import VerifyTicket from './pages/VerifyTicket';
 import MyBookings from './pages/MyBookings';
 import About from './pages/About';
 import Contact from './pages/Contact';
@@ -37,6 +38,8 @@ export default function App() {
               <Route path="/schedules" element={<BusSchedules />} />
               <Route path="/book-seats/:scheduleId" element={<SelectSeats />} />
               <Route path="/booking-confirmation/:bookingRef" element={<BookingConfirmation />} />
+              <Route path="/booking-success/:bookingRef" element={<BookingConfirmation />} />
+              <Route path="/verify-ticket/:reference" element={<VerifyTicket />} />
               <Route path="/my-bookings" element={<MyBookings />} />
               <Route path="/routes" element={<BusRoutes />} />
               <Route path="/tracking" element={<LiveTracking />} />

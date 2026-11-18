@@ -65,3 +65,9 @@ def clear_history(current_user):
     SearchHistory.query.filter_by(user_id=current_user.id).delete()
     db.session.commit()
     return jsonify({'message': 'Search history cleared'}), 200
+
+@user_bp.route('/profile', methods=['GET'])
+@token_required
+def get_user_profile(current_user):
+    """Returns authenticated user profile information"""
+    return jsonify(current_user.to_dict()), 200

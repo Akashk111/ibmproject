@@ -49,7 +49,7 @@ def admin_required(f):
         current_user = get_current_user_from_header()
         if not current_user:
             return jsonify({'error': 'Valid authentication token is required'}), 401
-        if current_user.role != 'admin':
+        if getattr(current_user, 'role', '').lower() != 'admin':
             return jsonify({'error': 'Administrator privileges required'}), 403
         return f(current_user, *args, **kwargs)
     return decorated
