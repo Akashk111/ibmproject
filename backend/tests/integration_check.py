@@ -147,6 +147,14 @@ print(f"✔ 12. 32-Seat bus layout verified for schedule {first_sched_id} ({seat
 
 # 13. Concurrency / Double-Booking Prevention (/api/bookings)
 test_date = "2026-11-20"
+with app.app_context():
+    from app.models import db
+    from app.models.booking import Booking, BookingSeat, Passenger
+    existing_b = Booking.query.filter_by(schedule_id=first_sched_id, travel_date=test_date).all()
+    for eb in existing_b:
+        db.session.delete(eb)
+    db.session.commit()
+
 book1 = client.post('/api/bookings', json={
     'schedule_id': first_sched_id,
     'travel_date': test_date,

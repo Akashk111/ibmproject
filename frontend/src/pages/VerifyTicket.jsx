@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { 
-  ShieldCheck, AlertTriangle, CheckCircle2, XCircle, Bus, 
-  MapPin, Clock, Calendar, Users, IndianRupee, ArrowLeft, QrCode 
+import {
+  ShieldCheck, AlertTriangle, CheckCircle2, XCircle, Bus,
+  MapPin, Clock, Calendar, Users, IndianRupee, ArrowLeft, QrCode
 } from 'lucide-react';
 import { bookingService } from '../api/services';
 import QRCodeDisplay from '../components/QRCodeDisplay';
@@ -36,7 +36,7 @@ export default function VerifyTicket() {
   return (
     <div className="min-h-screen bg-slate-100 py-10 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto space-y-6">
-        
+
         {/* Top Back Nav */}
         <div className="flex items-center justify-between">
           <Link
@@ -82,7 +82,7 @@ export default function VerifyTicket() {
           </div>
         ) : (
           <div className="bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-200 space-y-6">
-            
+
             {/* Verified Conductor Seal Header */}
             <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-6 sm:p-8 text-center space-y-3">
               <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-3xl flex items-center justify-center mx-auto shadow-inner border border-white/30">
@@ -104,7 +104,7 @@ export default function VerifyTicket() {
 
             {/* Passenger & Journey Particulars */}
             <div className="p-6 sm:p-8 space-y-6">
-              
+
               {/* Route & Vehicle */}
               <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-200">

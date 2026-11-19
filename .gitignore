@@ -18,3 +18,4 @@ backend/*.db.backup
 # Environment files
 .env
 .DS_Store
+.vercel

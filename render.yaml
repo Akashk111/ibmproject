@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: mangaluru-bus-backend
+    env: python
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "gunicorn --chdir backend run:app"
+    plan: free
+    envVars:
+      - key: FLASK_DEBUG
+        value: "false"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: "10000"
